@@ -49,20 +49,21 @@ StateController::StateController() : Node("state_controller"){
     //activate the actuator
     resetMaxon();
     usleep(1000000);
-    maxon_activation();
+    //maxon_activation();
 
     // create a thread to read CAN frames
-	std::thread read_can_thread(&StateController::read_can_frame, this);
-	read_can_thread.detach();
+   std::thread read_can_thread(&StateController::read_can_frame, this);
+   read_can_thread.detach();
 
     std::thread send_can_thread(&StateController::send_can_frames, this);
     send_can_thread.detach();
 
+    maxon_activation();
 }
 
 void StateController::maxon_activation(){
-    while(!maxon_activated && rclcpp::ok()){
-        RCLCPP_WARN(this->get_logger(), "maxon activation");
+    while(!maxon_activated){
+        RCLCPP_INFO(this->get_logger(), "maxon activation");
 
         struct can_frame frame;
 
@@ -73,34 +74,34 @@ void StateController::maxon_activation(){
         frame.data[1] = 0x05;
         send_can_frame(frame);
         usleep(1000000); //sleep for 200ms for maxon to change modes
-        RCLCPP_WARN(this->get_logger(), "maxon initiated");
+        RCLCPP_INFO(this->get_logger(), "maxon initiated");
 
         frame.data[0]=0x80;//pre op mode
         frame.data[1]=0x05;
         send_can_frame(frame);
         usleep(1000000);
-        RCLCPP_WARN(this->get_logger(), "maxon in pre op mode");
+        RCLCPP_INFO(this->get_logger(), "maxon in pre op mode");
 
         frame.data[0]=0x01;//op mode
         frame.data[1]=0x05;
         send_can_frame(frame);
         usleep(1000000);
-        RCLCPP_WARN(this->get_logger(), "maxon in op mode");
+        RCLCPP_INFO(this->get_logger(), "maxon in op mode");
 
         frame.can_id = 0x205;
         frame.data[0]=0x06;
         frame.data[1]=0x00;
         send_can_frame(frame);
         usleep(1000000);
-        RCLCPP_WARN(this->get_logger(), "sent 0x06 to 0x205");
+        RCLCPP_INFO(this->get_logger(), "sent 0x06 to 0x205");
 
 
         frame.data[0]=0x0F;
         frame.data[1]=0x00;
         send_can_frame(frame);
-        RCLCPP_WARN(this->get_logger(), "sent 0x0F to 0x205");
+        RCLCPP_INFO(this->get_logger(), "sent 0x0F to 0x205");
     }
-     RCLCPP_WARN(this->get_logger(), "maxon activated");
+     RCLCPP_INFO(this->get_logger(), "maxon activated");
 }
 
 void StateController::resetMaxon(){
@@ -134,7 +135,7 @@ void StateController::sendPosToMaxon(float angle){
     float ratio = STEERING_ANGLE_TO_RATIO(angle);
 
     //long raw_pos= RAD_ST_ANGLE_TO_ACTUATOR_POS(angle);
-    long raw_pos= RAD_ST_TO_MAXON_POS_WITH_RATIO(RAD_TO_DEG(angle),ratio);
+    long raw_pos= RAD_ST_TO_MAXON_POS_WITH_RATIO(angle,ratio);
     if(raw_pos>MAX_ACTUATOR_POS || raw_pos<-MAX_ACTUATOR_POS){
         RCLCPP_WARN(this->get_logger(), "Position out of range: %ld", raw_pos);
         raw_pos=MAX_ACTUATOR_POS;
@@ -261,7 +262,7 @@ void StateController::handle_can_frame(struct can_frame frame){
             //std::cout<<"mode: "<<mode<<std::endl;
             //std::cout<<"error_code(actual current): "<<error_code<<std::endl;
             // Handle maxon feedback
-            if(error_code==0 && maxon_activated){//error value is actually the current being pulled by the motor, when maxon is in error state, the value is 0
+            /*if(error_code==0 && maxon_activated){//error value is actually the current being pulled by the motor, when maxon is in error state, the value is 0
                 RCLCPP_ERROR(this->get_logger(), "Error code: %d", error_code);
                 maxon_activated = false;
                 struct can_frame frame;
@@ -274,7 +275,7 @@ void StateController::handle_can_frame(struct can_frame frame){
                 frame.data[1] = 0x05;
                 send_can_frame(frame);
                 maxon_activation();
-            }
+            }*/
     
             break;
         //not being used
@@ -289,8 +290,9 @@ void StateController::handle_can_frame(struct can_frame frame){
             break;*/
         
         
-        case PDO_TXTHREE(NODE_ID_STEERING):
+        case 0x385:
             //maxon feedback
+	    //RCLCPP_INFO(this->get_logger(), "I AM HERE, id 385");
             statusword2 = MAP_DECODE_PDO_TXTHREE_MAXON_STATUSWORD(frame.data);
             actual_position = MAP_DECODE_PDO_TXTHREE_MAXON_ACTUAL_POSITION(frame.data);
             maxon_activated = true;
@@ -301,7 +303,7 @@ void StateController::handle_can_frame(struct can_frame frame){
             }
             // Handle maxon feedback
             //std::cout<<"statusword: "<<statusword2<<std::endl;
-            RCLCPP_WARN(this->get_logger(), "actual_position: ");
+            //RCLCPP_INFO(this->get_logger(), "actual_position: ", actual_position);
             //std::cout<<"actual_moment: "<<actual_moment<<std::endl;
             break;
         //information not needed for now
@@ -352,6 +354,7 @@ void StateController::read_can_frame(){
 			return;
 		}
 		handle_can_frame(frame);// Send the received can frame to a function that handles it
+		//RCLCPP_INFO(this->get_logger(), "RECEIVED A CAN FRAME");
 	}
 }
 
