@@ -22,24 +22,24 @@ public:
   {
     
     systems_ready_sub_ = this->create_subscription<std_msgs::msg::Bool>(
-        "SystemsReady", 10, std::bind(&StateController::systemsReadyCallback, this, _1));
+        "SystemsReady", 10, std::bind(&StateController::systemsReadyCallback, this, _1));//autonumous ready
 
     mission_sub_ = this->create_subscription<std_msgs::msg::Bool>(
-        "Mission", 10, std::bind(&StateController::missionCallback, this, _1));
+        "Mission", 10, std::bind(&StateController::missionCallback, this, _1));//mission finished
 
     go_signal_sub_ = this->create_subscription<std_msgs::msg::Bool>(
-        "GoSignal", 10, std::bind(&StateController::goSignalCallback, this, _1));
+        "GoSignal", 10, std::bind(&StateController::goSignalCallback, this, _1));//ready to drive button
 
     emergency_brake_sub_ = this->create_subscription<std_msgs::msg::Bool>(
         "Emergency_Brake", 10, std::bind(&StateController::ebsStatusCallback, this, _1));
 
     standstill_sub_ = this->create_subscription<std_msgs::msg::Bool>(
-        "Standstill", 10, std::bind(&StateController::standstillCallback, this, _1));
+        "Standstill", 10, std::bind(&StateController::standstillCallback, this, _1));// velocity = 0
 
     state_publisher_ = this->create_publisher<lart_msgs::msg::State>("state", 10);
-    handshake_publisher_ = this->create_publisher<std_msgs::msg::Bool>("Handshake", 10);
+    handshake_publisher_ = this->create_publisher<std_msgs::msg::Bool>("Handshake", 10);// to be implemented
 
-    state_msg.data= lart_msgs::msg::State::OFF;
+    state_msg.data= lart_msgs::msg::State::OFF;//initialize state as off
   }
 
 private:
@@ -62,17 +62,17 @@ private:
       if (state_msg.data  == lart_msgs::msg::State::OFF)
       {
         state_msg.data = lart_msgs::msg::State::READY;
-        ready_start_time_ = std::chrono::steady_clock::now();
+        ready_start_time_ = std::chrono::steady_clock::now();//get the time since state==READY
         RCLCPP_INFO(this->get_logger(), "Ready state activated");
         state_publisher_->publish(state_msg);
       }
       else if (state_msg.data == lart_msgs::msg::State::EMERGENCY)
       {
-        throw EmergencyException("Emergency state detected");
+        throw EmergencyException("Emergency state detected");//emergency exception
       }
       else if(!valid_state(state_msg))
       {
-        throw BadStateException("Bad state detected");
+        throw BadStateException("Bad state detected");//bad state exception
       }  
   }
   
@@ -87,7 +87,7 @@ private:
   }
 
 
-  void goSignalCallback(const std_msgs::msg::Bool::SharedPtr msg)
+  void goSignalCallback(const std_msgs::msg::Bool::SharedPtr msg)//if the state has been ready for at least 5 seconds and R2D button has been pressed, change to driving state
   {
     if (msg->data && state_msg.data == lart_msgs::msg::State::READY)
     {
@@ -110,7 +110,7 @@ private:
     }
   }
 
-  void standstillCallback(const std_msgs::msg::Bool::SharedPtr msg)
+  void standstillCallback(const std_msgs::msg::Bool::SharedPtr msg)//car velocity = 0 and all the laps have been completed
   {
     if(msg->data && mission_finished){
       state_msg.data = lart_msgs::msg::State::FINISH;
@@ -119,7 +119,7 @@ private:
     }
   }
 
-  bool valid_state(lart_msgs::msg::State msg)
+  bool valid_state(lart_msgs::msg::State msg)//check if the state is valid for bad state exception
   {
     return (msg.data == lart_msgs::msg::State::OFF || msg.data == lart_msgs::msg::State::READY || msg.data == lart_msgs::msg::State::DRIVING || msg.data == lart_msgs::msg::State::EMERGENCY || msg.data == lart_msgs::msg::State::FINISH);
   }
