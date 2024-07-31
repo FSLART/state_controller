@@ -4,16 +4,19 @@
   <name>state_controller</name>
   <version>0.0.0</version>
   <description>TODO: Package description</description>
-  <maintainer email="andrelopes@todo.todo">andrelopes</maintainer>
+  <maintainer email="2230779@my.ipleiria.pt">andrelopes</maintainer>
   <license>Apache-2.0</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
   <depend>rclcpp</depend>
   <depend>std_msgs</depend>
   <depend>lart_msgs</depend>
+  <depend>openssl</depend>
+  
   <test_depend>ament_lint_auto</test_depend>
   <test_depend>ament_lint_common</test_depend>
   <test_depend>lart_msgs</test_depend>
+  <test_depend>openssl</test_depend>
   
   <export>
     <build_type>ament_cmake</build_type>
