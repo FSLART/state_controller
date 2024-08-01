@@ -1,3 +1,4 @@
+//While some "miscellaneous" messages are not defined i added to ASStatus int64 timestamp, string hash, int8 mission_finished. Still need to know where the R2D button will be published and the type of message
 #include <functional>
 #include <memory>
 #include <chrono>
@@ -28,11 +29,11 @@ public:
     
     handshake_sub_ = this->create_subscription<lart_msgs::msg::ASStatus>("/acu_origin/system_status/critical_as/", 10, std::bind(&StateController::handshakeCallback, this, _1));
 
-    mission_sub_ = this->create_subscription<lart_msgs::msg::Mission>("/acu_origin/system_status/critical_as/", 10, std::bind(&StateController::missionCallback, this, _1));//mission finished
+    mission_finished_sub_ = this->create_subscription<lart_msgs::msg::ASStatus>("/pc_origin/system_status/critical_as/", 10, std::bind(&StateController::missionFinishedCallback, this, _1));//mission finished
 
     go_signal_sub_ = this->create_subscription<std_msgs::msg::Bool>("GoSignal", 10, std::bind(&StateController::goSignalCallback, this, _1));//ready to drive button, need to know the topic and type of message
 
-    emergency_brake_sub_ = this->create_subscription<std_msgs::msg::Bool>("/acu_origin/system_status/critical_as/ebs_brk", 10, std::bind(&StateController::ebsStatusCallback, this, _1));//need to know the type of message
+    emergency_brake_sub_ = this->create_subscription<std_msgs::msg::Bool>("/acu_origin/system_status/critical_as/ebs_brk", 10, std::bind(&StateController::ebsStatusCallback, this, _1));//need to know the type of message, considering it to be a bool
 
     standstill_sub_ = this->create_subscription<std_msgs::msg::Bool>("Standstill", 10, std::bind(&StateController::standstillCallback, this, _1));// velocity = 0 need to sub spac probably
 
@@ -51,6 +52,8 @@ private:
   bool mission_finished=false;
 
   int handshake_recived = 0;
+
+  std::chrono::steady_clock::time_point last_publish=std::chrono::steady_clock::now();
   
 
   std::string compute_sha256(const std::string &data) {
@@ -64,7 +67,7 @@ private:
     return ss.str();
   }
 
-  void publish_handshake(){
+  void publish_handshake(){//publish timestamp and hash
     lart_msgs::msg::ASStatus handshake_msg;
 
     auto now = std::chrono::system_clock::now();
@@ -81,16 +84,12 @@ private:
     handshake_publisher_->publish(handshake_msg);
   }
 
-  void acuStateCallback(const lart_msgs::msg::State::SharedPtr msg)
+  void acuStateCallback(const lart_msgs::msg::State::SharedPtr msg) //check if ACU has declared emergeny state
   {
     if (msg->data == lart_msgs::msg::State::EMERGENCY)
     {
       state_msg.data = lart_msgs::msg::State::EMERGENCY;
       RCLCPP_INFO(this->get_logger(), "Emergency state activated");
-      state_publisher_->publish(state_msg);
-    }else if (msg->data == lart_msgs::msg::State::DRIVING){
-      state_msg.data = lart_msgs::msg::State::DRIVING;
-      RCLCPP_INFO(this->get_logger(), "Driving state activated");
       state_publisher_->publish(state_msg);
     }
   }
@@ -108,13 +107,17 @@ private:
     
       std_msgs::msg::String verify_recived_msg;
       verify_recived_msg.data = compute_sha256(std::to_string(unix_time));
-      if(msg->hash.compare(verify_recived_msg.data) == 0 && msg->timestamp == unix_time){
+      if(msg->hash.compare(verify_recived_msg.data) == 0 && msg->timestamp == unix_time){//compare the received hash with the computed hash, change state to ready if they are the same
         handshake_recived=1;
         ready_state();
       }
       else{
         handshake_recived=0;
-        publish_handshake();
+        auto now = std::chrono::steady_clock::now();
+        if(std::chrono::duration_cast<std::chrono::seconds>(now - last_publish).count() >= 1){//publish handshake every second if it has not been received
+          publish_handshake();
+          last_publish=std::chrono::steady_clock::now();
+        }
       }
     }
   }
@@ -138,7 +141,7 @@ private:
       }  
   }
   
-  void ebsStatusCallback(const std_msgs::msg::Bool::SharedPtr msg)
+  void ebsStatusCallback(const std_msgs::msg::Bool::SharedPtr msg)//change state to emergengy if EBS is activated
   {
     if (msg->data)
     {
@@ -165,18 +168,20 @@ private:
     }
   }
 
-  void missionCallback(const lart_msgs::msg::Mission::SharedPtr msg)
+  void missionFinishedCallback(const lart_msgs::msg::ASStatus::SharedPtr msg)
   {
-    if(msg->data==lart_msgs::msg::Mission::FINISHED){
+    if(msg->mission_finished==1){
       mission_finished=true;
+    }else{
+      mission_finished=false;
     }
   }
 
-  void standstillCallback(const std_msgs::msg::Bool::SharedPtr msg)//car velocity = 0 and all the laps have been completed
+  void standstillCallback(const std_msgs::msg::Bool::SharedPtr msg)//car velocity = 0 and all the laps have been completed change state to finish, probably need to sub spac and check if the speed is under x amount
   {
     if(msg->data && mission_finished){
       state_msg.data = lart_msgs::msg::State::FINISH;
-      RCLCPP_INFO(this->get_logger(), "Mission finished");
+      RCLCPP_INFO(this->get_logger(), "Mission finished, state changed to Finish");
       state_publisher_->publish(state_msg);
     }
   }
@@ -189,7 +194,7 @@ private:
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr emergency_brake_sub_;
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr go_signal_sub_;
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr standstill_sub_;
-  rclcpp::Subscription<lart_msgs::msg::Mission>::SharedPtr mission_sub_;
+  rclcpp::Subscription<lart_msgs::msg::ASStatus>::SharedPtr mission_finished_sub_;
   rclcpp::Subscription<lart_msgs::msg::ASStatus>::SharedPtr handshake_sub_;
   rclcpp::Subscription<lart_msgs::msg::State>::SharedPtr acu_state_sub_;
 
