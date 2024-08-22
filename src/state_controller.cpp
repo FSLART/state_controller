@@ -26,7 +26,6 @@ class StateController : public rclcpp::Node
 public:
   StateController() : Node("state_controller"), mission_finished(false)
   {
-    
     handshake_sub_ = this->create_subscription<lart_msgs::msg::ASStatus>("/acu_origin/system_status/critical_as/", 10, std::bind(&StateController::handshakeCallback, this, _1));
 
     mission_finished_sub_ = this->create_subscription<lart_msgs::msg::ASStatus>("/pc_origin/system_status/critical_as/", 10, std::bind(&StateController::missionFinishedCallback, this, _1));//mission finished
@@ -170,7 +169,7 @@ private:
 
   void missionFinishedCallback(const lart_msgs::msg::ASStatus::SharedPtr msg)
   {
-    if(msg->mission_finished==1){
+    if(msg->state.data==lart_msgs::msg::State::FINISH){
       mission_finished=true;
     }else{
       mission_finished=false;
