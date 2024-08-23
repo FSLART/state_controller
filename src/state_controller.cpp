@@ -26,9 +26,9 @@ class StateController : public rclcpp::Node
 public:
   StateController() : Node("state_controller"), mission_finished(false)
   {
-    handshake_sub_ = this->create_subscription<lart_msgs::msg::ASStatus>("/acu_origin/system_status/critical_as/", 10, std::bind(&StateController::handshakeCallback, this, _1));
+    handshake_sub_ = this->create_subscription<lart_msgs::msg::ASStatus>("/acu_origin/system_status/critical_as", 10, std::bind(&StateController::handshakeCallback, this, _1));
 
-    mission_finished_sub_ = this->create_subscription<lart_msgs::msg::ASStatus>("/pc_origin/system_status/critical_as/", 10, std::bind(&StateController::missionFinishedCallback, this, _1));//mission finished
+    mission_finished_sub_ = this->create_subscription<lart_msgs::msg::ASStatus>("/pc_origin/system_status/critical_as", 10, std::bind(&StateController::missionFinishedCallback, this, _1));//mission finished
 
     go_signal_sub_ = this->create_subscription<std_msgs::msg::Bool>("GoSignal", 10, std::bind(&StateController::goSignalCallback, this, _1));//ready to drive button, need to know the topic and type of message
 
@@ -40,7 +40,7 @@ public:
 
     acu_state_sub_ = this->create_subscription<lart_msgs::msg::State>("/acu_origin/system_status/critical_as/state", 10, std::bind(&StateController::acuStateCallback, this, _1));
 
-    handshake_publisher_ = this->create_publisher<lart_msgs::msg::ASStatus>("/pc_origin/system_status/critical_as/", 10);
+    handshake_publisher_ = this->create_publisher<lart_msgs::msg::ASStatus>("/pc_origin/system_status/critical_as", 10);
 
     state_msg.data= lart_msgs::msg::State::OFF;//initialize state as off
   }
