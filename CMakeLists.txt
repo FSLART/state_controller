@@ -11,6 +11,7 @@ if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
 endif()
 
 include_directories(${CMAKE_SOURCE_DIR}/include ${OpenSSL_INCLUDE_DIR})
+include_directories(include)
 
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
