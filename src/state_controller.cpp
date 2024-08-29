@@ -21,6 +21,8 @@ StateController::StateController() : Node("state_controller"), mission_finished(
     handshake_publisher_ = this->create_publisher<lart_msgs::msg::ASStatus>("/pc_origin/system_status/critical_as", 10);
 
     state_msg.data = lart_msgs::msg::State::OFF; // initialize state as off
+    
+    publish_handshake();
 }
 
 std::string StateController::compute_sha256(const std::string &data)
@@ -64,7 +66,7 @@ void StateController::acuStateCallback(const lart_msgs::msg::State::SharedPtr ms
 
 void StateController::handshakeCallback(const lart_msgs::msg::ASStatus::SharedPtr msg)
 {
-    if (msg->hash.empty() || msg->timestamp == 0)
+    if (msg->hash.empty() && msg->timestamp == 0)
     {
         handshake_recived = 1;
         ready_state();
@@ -116,7 +118,7 @@ void StateController::ready_state()
 
 void StateController::ebsStatusCallback(const std_msgs::msg::Bool::SharedPtr msg)
 {
-    if (msg->data)
+    if (msg->data && state_msg.data != lart_msgs::msg::State::EMERGENCY)
     {
         state_msg.data = lart_msgs::msg::State::EMERGENCY;
         RCLCPP_INFO(this->get_logger(), "Emergency Brake system activated");
@@ -154,7 +156,7 @@ void StateController::missionFinishedCallback(const lart_msgs::msg::ASStatus::Sh
 
 void StateController::standstillCallback(const std_msgs::msg::Bool::SharedPtr msg)
 {
-    if (msg->data && mission_finished)
+    if (msg->data && mission_finished && state_msg.data != lart_msgs::msg::State::FINISH)
     {
         state_msg.data = lart_msgs::msg::State::FINISH;
         RCLCPP_INFO(this->get_logger(), "Mission finished, state changed to Finish");
@@ -174,6 +176,7 @@ int main(int argc, char *argv[])
         rclcpp::init(argc, argv);
         rclcpp::spin(std::make_shared<StateController>());
         rclcpp::shutdown();
+
     }
     catch (const EmergencyException &e)
     {
