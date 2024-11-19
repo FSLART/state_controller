@@ -29,8 +29,11 @@
 #include "lart_msgs/msg/dynamics_cmd.hpp"
 #include "./Can-Header-Map/CAN_asdb.h"
 #include "./Can-Header-Map/CANOPEN_maxondb.h"
+#include "lart_common.h"
 
 #define T24E_CAN_INTERFACE "can0"
+#define REMOTE_NODE_ID 0x05
+
 
 //#define RES_READY_CAN_ID 0x0B//see real id
 
@@ -42,13 +45,13 @@ public:
 private:
   // Function declarations
   void read_can_frame();
-  void missionFinishedCallback(const lart_msgs::msg::ASStatus::SharedPtr msg);
+  void missionFinishedCallback(const lart_msgs::msg::State::SharedPtr msg);
   bool valid_state(lart_msgs::msg::State msg);
   void send_can_frames();
   void send_can_frame(struct can_frame frame);
   void handle_can_frame(struct can_frame frame);
   void spacCallback(const lart_msgs::msg::DynamicsCMD::SharedPtr msg);
-  void emergencyCallback(const std_msgs::msg::Bool::SharedPtr msg);
+  void emergencyCallback(const lart_msgs::msg::State::SharedPtr msg);
   void inspectionSteeringAngleCallback(const std_msgs::msg::Float64::SharedPtr msg);
   void maxon_activation();
 
@@ -61,17 +64,39 @@ private:
   bool mission_finished;
   std::chrono::steady_clock::time_point ready_change;//time the state was changed to ready
   bool res_ready;
+  bool relative_zero_set; // flag to check if relative zero is set
+  uint32_t relative_maxon_zero; // relative zero value
+
+  //id 0x185
+  uint32_t statusword1;
+  uint32_t mode;
+  uint32_t error_code;
+
+  //id 0x285
+  uint32_t target_position;
+  uint32_t target_speed;
+
+  //id 0x385
+  uint32_t statusword2;
+  uint32_t actual_position;
+  uint32_t actual_moment;
+
+  //id 0x485
+  uint32_t statusword3;
+  uint32_t actual_speed;
+  uint32_t actual_pwm_duty;
 
   std::mutex state_mutex;
+  std::mutex socket_mutex;
 
   // mission controller subscription
-  rclcpp::Subscription<lart_msgs::msg::ASStatus>::SharedPtr mission_finished_sub_;
+  rclcpp::Subscription<lart_msgs::msg::State>::SharedPtr mission_finished_sub_;
 
   //spac subscription
   rclcpp::Subscription<lart_msgs::msg::DynamicsCMD>::SharedPtr spac_sub_;
 
   // emergency stop subscription
-  rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr emergency_sub_;
+  rclcpp::Subscription<lart_msgs::msg::State>::SharedPtr emergency_sub_;
 
   // state publisher to pc
   rclcpp::Publisher<lart_msgs::msg::State>::SharedPtr state_publisher_;
