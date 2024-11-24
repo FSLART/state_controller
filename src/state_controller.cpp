@@ -36,8 +36,6 @@ StateController::StateController() : Node("state_controller"){
     strcpy(ifr.ifr_name, T24E_CAN_INTERFACE);
     ioctl(this->s, SIOCGIFINDEX, &ifr);
     
-    
-
     // bind the socket to the CAN interface
     struct sockaddr_can addr;
     addr.can_family = AF_CAN;
@@ -46,7 +44,8 @@ StateController::StateController() : Node("state_controller"){
         RCLCPP_ERROR(this->get_logger(), "Failed to bind socket: %s", strerror(errno));
         exit(1);         
     }
-
+    //activate the actuator
+    maxon_activation();
 
     // create a thread to read CAN frames
 	std::thread read_can_thread(&StateController::read_can_frame, this);
@@ -55,16 +54,16 @@ StateController::StateController() : Node("state_controller"){
     std::thread send_can_thread(&StateController::send_can_frames, this);
     send_can_thread.detach();
 
-    maxon_activation(); 
 }
 
 void StateController::maxon_activation(){
     std::cout<<"maxon activation"<<std::endl << std::flush;
 
     struct can_frame frame;
-    for (int i = 0; i < 8; i++){
+    std::memset(&frame, 0, sizeof(frame));
+    /*for (int i = 0; i < 8; i++){
         frame.data[i] = 0;
-    }
+    }*/
     frame.can_dlc = 8;
 
     frame.can_id = 0x00;//id for initialization
@@ -72,29 +71,35 @@ void StateController::maxon_activation(){
     frame.data[1] = 0x05;
     send_can_frame(frame);
     usleep(200000); //sleep for 200ms for maxon to change modes
-    
+    std::cout<<"maxon initiated"<<std::endl << std::flush;
+
     frame.data[0]=0x80;//pre op mode
     frame.data[1]=0x05;
     send_can_frame(frame);
     usleep(200000);
+    std::cout<<"maxon in pre op mode"<<std::endl << std::flush;
 
     frame.data[0]=0x01;//op mode
     frame.data[1]=0x05;
     send_can_frame(frame);
     usleep(200000);
+    std::cout<<"maxon in op mode"<<std::endl << std::flush;
 
     frame.can_id = 0x205;
     frame.data[0]=0x06;
     frame.data[1]=0x05;
     send_can_frame(frame);
     usleep(200000);
+    std::cout<<"sent 0x06 to 0x205"<<std::endl << std::flush;
 
 
     frame.data[0]=0x0F;
     frame.data[1]=0x05;
     send_can_frame(frame);
     usleep(200000);
+    std::cout<<"sent 0x0F to 0x205"<<std::endl << std::flush;
 
+    std::cout<<"maxon activated"<<std::endl << std::flush;
 }
 
 void StateController::inspectionSteeringAngleCallback(const std_msgs::msg::Float64::SharedPtr msg){//to test the maxon with the jetson
@@ -107,14 +112,39 @@ void StateController::inspectionSteeringAngleCallback(const std_msgs::msg::Float
     for (int i = 0; i < frame.can_dlc; i++){
         frame.data[i] = 0;
     }
-    
-    long pos = relative_maxon_zero + RAD_ST_ANGLE_TO_ACTUATOR_POS(angle);
-    MAP_ENCODE_AS_STEERING_ANGLE_ACTUAL(frame.data, angle);
-    this->send_can_frame(frame);
-    std::cout<<"relative_maxon_zero: "<<relative_maxon_zero<<std::endl;
-
-    std::cout<<"pos: "<<relative_maxon_zero+pos<<std::endl;
+    int32_t raw_pos= RAD_ST_ANGLE_TO_ACTUATOR_POS(angle);
+    int32_t pos = relative_maxon_zero + raw_pos;
+    if(raw_pos>MAX_ACTUATOR_POS || raw_pos<-MAX_ACTUATOR_POS){
+        RCLCPP_ERROR(this->get_logger(), "Position out of range: %d", pos);
+        return;
+    }
     std::cout<<"angle: "<<angle<<std::endl;
+    sendPosToMaxon(pos);
+}
+
+void StateController::sendPosToMaxon(int32_t pos){
+    //receives the position with the offser already added
+    struct can_frame frame;
+    frame.can_id = 0x405;//pc to maxon id
+    frame.can_dlc = 8;
+    for (int i = 0; i < frame.can_dlc; i++){
+        frame.data[i] = 0;
+    }
+    frame.data[0] = 0x1F;
+    for (int i = 0; i < 4; ++i) {
+        frame.data[2 + i] = (pos >> (8 * i)) & 0xFF; // Extract each byte
+    }
+    this->send_can_frame(frame);
+
+    //print to see the values in the array for debugging
+    for (int i = 0; i < frame.can_dlc; i++) {
+        std::cout << "0x" << std::hex << std::uppercase << static_cast<int>(frame.data[i]) << " ";
+    }
+    std::cout << std::endl;
+
+    std::cout<<"relative_maxon_zero: "<<relative_maxon_zero<<std::endl;
+    std::cout<<std::hex<<relative_maxon_zero+pos<<std::endl;//position in hex
+    std::cout<<std::dec<<pos<<std::endl;//position in encoder ticks
 }
 
 void StateController::spacCallback(const lart_msgs::msg::DynamicsCMD::SharedPtr msg){
@@ -125,6 +155,7 @@ void StateController::spacCallback(const lart_msgs::msg::DynamicsCMD::SharedPtr 
     for (int i = 0; i < frame.can_dlc; i++){
         frame.data[i] = 0;
     }
+    (void) msg;//to be removed
 }
 
 void StateController::missionFinishedCallback(const lart_msgs::msg::State::SharedPtr msg){
@@ -146,6 +177,7 @@ void StateController::emergencyCallback(const lart_msgs::msg::State::SharedPtr m
         }
         state_publisher_->publish(this->state_msg);
         struct can_frame frame;
+        (void) frame;//to be removed
     }
 }
 
@@ -186,6 +218,9 @@ void StateController::handle_can_frame(struct can_frame frame){
             statusword1 = MAP_DECODE_PDO_TXONE_STATUSWORD(frame.data);
             mode = MAP_DECODE_PDO_TXONE_MODES_OF_OPERATION(frame.data);
             error_code = MAP_DECODE_PDO_TXONE_ERROR_CODE(frame.data);
+            std::cout<<"statusword: "<<statusword1<<std::endl;
+            std::cout<<"mode: "<<mode<<std::endl;
+            std::cout<<"error_code: "<<error_code<<std::endl;
             if(error_code!=0){
                 RCLCPP_ERROR(this->get_logger(), "Error code: %d", error_code);
                 struct can_frame frame;
@@ -197,11 +232,9 @@ void StateController::handle_can_frame(struct can_frame frame){
                 frame.data[0] = 0x80; //reset the maxon
                 frame.data[1] = 0x05;
                 send_can_frame(frame);
+                maxon_activation();
             }
             // Handle maxon feedback
-            std::cout<<"statusword: "<<statusword1<<std::endl;
-            std::cout<<"mode: "<<mode<<std::endl;
-            std::cout<<"error_code: "<<error_code<<std::endl;
 
             break;
         case PDO_TXTWO_MAXON():
@@ -242,6 +275,7 @@ void StateController::handle_can_frame(struct can_frame frame){
             // Handle ACU state frame
             uint32_t status = MAP_DECODE_AS_STATE(frame.data);
             uint32_t mission = MAP_DECODE_AS_MISSION(frame.data);//publish mission to computer
+            (void) mission;//to be removed
 
             if(status == lart_msgs::msg::State::READY && state_msg.data != lart_msgs::msg::State::READY){
                 ready_change = std::chrono::steady_clock::now(); //save the time the state was changed to ready
@@ -269,7 +303,6 @@ void StateController::read_can_frame(){
 		handle_can_frame(frame);
 	}
 }
-
 
 bool StateController::valid_state(lart_msgs::msg::State msg){
     return (msg.data == lart_msgs::msg::State::OFF || msg.data == lart_msgs::msg::State::READY || msg.data == lart_msgs::msg::State::DRIVING || msg.data == lart_msgs::msg::State::EMERGENCY || msg.data == lart_msgs::msg::State::FINISH);

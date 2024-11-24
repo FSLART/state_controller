@@ -17,6 +17,8 @@
 #include <errno.h>
 #include <thread>
 #include <unistd.h> 
+#include <array>
+#include <stdlib.h>
 
 #include "rclcpp/rclcpp.hpp"
 #include "std_msgs/msg/bool.hpp"
@@ -33,12 +35,12 @@
 
 #define T24E_CAN_INTERFACE "can0"
 #define REMOTE_NODE_ID 0x05
+#define MAX_ACTUATOR_POS 492200
 
 
 //#define RES_READY_CAN_ID 0x0B//see real id
 
-class StateController : public rclcpp::Node
-{
+class StateController : public rclcpp::Node{
 public:
   StateController();
 
@@ -54,6 +56,7 @@ private:
   void emergencyCallback(const lart_msgs::msg::State::SharedPtr msg);
   void inspectionSteeringAngleCallback(const std_msgs::msg::Float64::SharedPtr msg);
   void maxon_activation();
+  void sendPosToMaxon(int32_t pos);
 
 
   // class variables
