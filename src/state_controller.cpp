@@ -45,7 +45,8 @@ StateController::StateController() : Node("state_controller"){
         exit(1);         
     }
     //activate the actuator
-    maxon_activation();
+    resetMaxon();
+    //maxon_activation();
 
     // create a thread to read CAN frames
 	std::thread read_can_thread(&StateController::read_can_frame, this);
@@ -98,6 +99,18 @@ void StateController::maxon_activation(){
     std::cout<<"sent 0x0F to 0x205"<<std::endl << std::flush;
 
     std::cout<<"maxon activated"<<std::endl << std::flush;
+}
+
+void StateController::resetMaxon(){
+    struct can_frame frame;
+    frame.can_id = 0x00;//id for reset
+    frame.can_dlc = 8;
+    for (int i = 0; i < frame.can_dlc; i++){
+        frame.data[i] = 0;
+    }
+    frame.data[0] = 0x81; //reset the maxon
+    frame.data[1] = 0x05;
+    send_can_frame(frame);
 }
 
 void StateController::inspectionSteeringAngleCallback(const std_msgs::msg::Float64::SharedPtr msg){//to test the maxon with the jetson

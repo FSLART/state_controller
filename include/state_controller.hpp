@@ -57,6 +57,7 @@ private:
   void inspectionSteeringAngleCallback(const std_msgs::msg::Float64::SharedPtr msg);
   void maxon_activation();
   void sendPosToMaxon(long pos);
+  void resetMaxon();
 
 
   // class variables
