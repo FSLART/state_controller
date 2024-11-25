@@ -56,7 +56,7 @@ private:
   void emergencyCallback(const lart_msgs::msg::State::SharedPtr msg);
   void inspectionSteeringAngleCallback(const std_msgs::msg::Float64::SharedPtr msg);
   void maxon_activation();
-  void sendPosToMaxon(int32_t pos);
+  void sendPosToMaxon(long pos);
 
 
   // class variables
@@ -68,7 +68,7 @@ private:
   std::chrono::steady_clock::time_point ready_change;//time the state was changed to ready
   bool res_ready;
   bool relative_zero_set; // flag to check if relative zero is set
-  uint32_t relative_maxon_zero; // relative zero value
+  long relative_maxon_zero; // relative zero value
 
   //id 0x185
   uint32_t statusword1;

@@ -21,7 +21,7 @@ StateController::StateController() : Node("state_controller"){
 
     res_ready = false;
 
-    relative_zero_set = true;
+    relative_zero_set = false;
 
     relative_maxon_zero = 0;
 
@@ -51,8 +51,8 @@ StateController::StateController() : Node("state_controller"){
 	std::thread read_can_thread(&StateController::read_can_frame, this);
 	read_can_thread.detach();
 
-    std::thread send_can_thread(&StateController::send_can_frames, this);
-    send_can_thread.detach();
+    //std::thread send_can_thread(&StateController::send_can_frames, this);
+    //send_can_thread.detach();
 
 }
 
@@ -60,10 +60,9 @@ void StateController::maxon_activation(){
     std::cout<<"maxon activation"<<std::endl << std::flush;
 
     struct can_frame frame;
-    std::memset(&frame, 0, sizeof(frame));
-    /*for (int i = 0; i < 8; i++){
+    for (int i = 0; i < 8; i++){
         frame.data[i] = 0;
-    }*/
+    }
     frame.can_dlc = 8;
 
     frame.can_id = 0x00;//id for initialization
@@ -87,16 +86,15 @@ void StateController::maxon_activation(){
 
     frame.can_id = 0x205;
     frame.data[0]=0x06;
-    frame.data[1]=0x05;
+    frame.data[1]=0x00;
     send_can_frame(frame);
     usleep(200000);
     std::cout<<"sent 0x06 to 0x205"<<std::endl << std::flush;
 
 
     frame.data[0]=0x0F;
-    frame.data[1]=0x05;
+    frame.data[1]=0x00;
     send_can_frame(frame);
-    usleep(200000);
     std::cout<<"sent 0x0F to 0x205"<<std::endl << std::flush;
 
     std::cout<<"maxon activated"<<std::endl << std::flush;
@@ -113,20 +111,29 @@ void StateController::inspectionSteeringAngleCallback(const std_msgs::msg::Float
         frame.data[i] = 0;
     }
     int32_t raw_pos= RAD_ST_ANGLE_TO_ACTUATOR_POS(angle);
-    int32_t pos = relative_maxon_zero + raw_pos;
+    long pos = relative_maxon_zero + raw_pos;
     if(raw_pos>MAX_ACTUATOR_POS || raw_pos<-MAX_ACTUATOR_POS){
-        RCLCPP_ERROR(this->get_logger(), "Position out of range: %d", pos);
+        RCLCPP_ERROR(this->get_logger(), "Position out of range: %d", raw_pos);
         return;
     }
     std::cout<<"angle: "<<angle<<std::endl;
     sendPosToMaxon(pos);
 }
 
-void StateController::sendPosToMaxon(int32_t pos){
+void StateController::sendPosToMaxon(long pos){
     //receives the position with the offser already added
     struct can_frame frame;
-    frame.can_id = 0x405;//pc to maxon id
+    frame.can_id = 0x205;//pc to maxon id
     frame.can_dlc = 8;
+    for (int i = 0; i < frame.can_dlc; i++){
+        frame.data[i] = 0;
+    }
+    frame.data[0] = 0x0F;
+    this->send_can_frame(frame);
+    usleep(1000);
+
+    frame.can_id = 0x405;//pc to maxon id
+
     for (int i = 0; i < frame.can_dlc; i++){
         frame.data[i] = 0;
     }
@@ -142,8 +149,9 @@ void StateController::sendPosToMaxon(int32_t pos){
     }
     std::cout << std::endl;
 
-    std::cout<<"relative_maxon_zero: "<<relative_maxon_zero<<std::endl;
-    std::cout<<std::hex<<relative_maxon_zero+pos<<std::endl;//position in hex
+    std::cout<<"relative_maxon_zero: "<<std::endl;
+    std::cout<<std::dec<<relative_maxon_zero<<std::endl;
+    std::cout<<std::hex<<pos<<std::endl;//position in hex
     std::cout<<std::dec<<pos<<std::endl;//position in encoder ticks
 }
 
@@ -229,7 +237,7 @@ void StateController::handle_can_frame(struct can_frame frame){
                 for (int i = 0; i < frame.can_dlc; i++){
                     frame.data[i] = 0;
                 }
-                frame.data[0] = 0x80; //reset the maxon
+                frame.data[0] = 0x81; //reset the maxon
                 frame.data[1] = 0x05;
                 send_can_frame(frame);
                 maxon_activation();
