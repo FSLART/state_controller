@@ -45,15 +45,15 @@ StateController::StateController() : Node("state_controller"){
         exit(1);         
     }
     //activate the actuator
-    resetMaxon();
-    //maxon_activation();
+    //resetMaxon();
+    maxon_activation();
 
     // create a thread to read CAN frames
 	std::thread read_can_thread(&StateController::read_can_frame, this);
 	read_can_thread.detach();
 
-    //std::thread send_can_thread(&StateController::send_can_frames, this);
-    //send_can_thread.detach();
+    std::thread send_can_thread(&StateController::send_can_frames, this);
+    send_can_thread.detach();
 
 }
 
@@ -61,10 +61,8 @@ void StateController::maxon_activation(){
     std::cout<<"maxon activation"<<std::endl << std::flush;
 
     struct can_frame frame;
-    for (int i = 0; i < 8; i++){
-        frame.data[i] = 0;
-    }
-    frame.can_dlc = 8;
+
+    frame.can_dlc = 2;
 
     frame.can_id = 0x00;//id for initialization
     frame.data[0] = 0x00; //turn on the maxon
@@ -104,10 +102,7 @@ void StateController::maxon_activation(){
 void StateController::resetMaxon(){
     struct can_frame frame;
     frame.can_id = 0x00;//id for reset
-    frame.can_dlc = 8;
-    for (int i = 0; i < frame.can_dlc; i++){
-        frame.data[i] = 0;
-    }
+    frame.can_dlc = 2;
     frame.data[0] = 0x81; //reset the maxon
     frame.data[1] = 0x05;
     send_can_frame(frame);
@@ -117,16 +112,10 @@ void StateController::inspectionSteeringAngleCallback(const std_msgs::msg::Float
     // Handle inspection steering angle callback
     auto angle = msg->data;
 
-    struct can_frame frame;
-    frame.can_id = 0x405;//pc to maxon id
-    frame.can_dlc = 8;
-    for (int i = 0; i < frame.can_dlc; i++){
-        frame.data[i] = 0;
-    }
-    int32_t raw_pos= RAD_ST_ANGLE_TO_ACTUATOR_POS(angle);
+    long raw_pos= RAD_ST_ANGLE_TO_ACTUATOR_POS(angle);
     long pos = relative_maxon_zero + raw_pos;
     if(raw_pos>MAX_ACTUATOR_POS || raw_pos<-MAX_ACTUATOR_POS){
-        RCLCPP_ERROR(this->get_logger(), "Position out of range: %d", raw_pos);
+        RCLCPP_ERROR(this->get_logger(), "Position out of range: %ld", raw_pos);
         return;
     }
     std::cout<<"angle: "<<angle<<std::endl;
@@ -136,21 +125,17 @@ void StateController::inspectionSteeringAngleCallback(const std_msgs::msg::Float
 void StateController::sendPosToMaxon(long pos){
     //receives the position with the offser already added
     struct can_frame frame;
-    frame.can_id = 0x205;//pc to maxon id
-    frame.can_dlc = 8;
-    for (int i = 0; i < frame.can_dlc; i++){
-        frame.data[i] = 0;
-    }
+    frame.can_id = 0x205;
+    frame.can_dlc = 2;
     frame.data[0] = 0x0F;
     this->send_can_frame(frame);
     usleep(1000);
 
     frame.can_id = 0x405;//pc to maxon id
+    frame.can_dlc = 6;
 
-    for (int i = 0; i < frame.can_dlc; i++){
-        frame.data[i] = 0;
-    }
     frame.data[0] = 0x1F;
+    frame.data[1] = 0x00;
     for (int i = 0; i < 4; ++i) {
         frame.data[2 + i] = (pos >> (8 * i)) & 0xFF; // Extract each byte
     }
@@ -180,7 +165,7 @@ void StateController::spacCallback(const lart_msgs::msg::DynamicsCMD::SharedPtr 
 }
 
 void StateController::missionFinishedCallback(const lart_msgs::msg::State::SharedPtr msg){
-    // Handle mission finished callback from mission controller
+    //Handle mission finished callback from mission controller
     if (msg->data == lart_msgs::msg::State::FINISH){
         this->mission_finished = true;
     }
@@ -242,6 +227,7 @@ void StateController::handle_can_frame(struct can_frame frame){
             std::cout<<"statusword: "<<statusword1<<std::endl;
             std::cout<<"mode: "<<mode<<std::endl;
             std::cout<<"error_code: "<<error_code<<std::endl;
+            // Handle maxon feedback
             if(error_code!=0){
                 RCLCPP_ERROR(this->get_logger(), "Error code: %d", error_code);
                 struct can_frame frame;
@@ -255,8 +241,7 @@ void StateController::handle_can_frame(struct can_frame frame){
                 send_can_frame(frame);
                 maxon_activation();
             }
-            // Handle maxon feedback
-
+    
             break;
         case PDO_TXTWO_MAXON():
             //maxon feedback
@@ -321,7 +306,7 @@ void StateController::read_can_frame(){
 			RCLCPP_ERROR(this->get_logger(), "Failed to read CAN frame: %s", strerror(errno));
 			return;
 		}
-		handle_can_frame(frame);
+		handle_can_frame(frame);    
 	}
 }
 
