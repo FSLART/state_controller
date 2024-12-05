@@ -68,26 +68,26 @@ void StateController::maxon_activation(){
     frame.data[0] = 0x00; //turn on the maxon
     frame.data[1] = 0x05;
     send_can_frame(frame);
-    usleep(200000); //sleep for 200ms for maxon to change modes
+    usleep(1000000); //sleep for 200ms for maxon to change modes
     std::cout<<"maxon initiated"<<std::endl << std::flush;
 
     frame.data[0]=0x80;//pre op mode
     frame.data[1]=0x05;
     send_can_frame(frame);
-    usleep(200000);
+    usleep(1000000);
     std::cout<<"maxon in pre op mode"<<std::endl << std::flush;
 
     frame.data[0]=0x01;//op mode
     frame.data[1]=0x05;
     send_can_frame(frame);
-    usleep(200000);
+    usleep(1000000);
     std::cout<<"maxon in op mode"<<std::endl << std::flush;
 
     frame.can_id = 0x205;
     frame.data[0]=0x06;
     frame.data[1]=0x00;
     send_can_frame(frame);
-    usleep(200000);
+    usleep(1000000);
     std::cout<<"sent 0x06 to 0x205"<<std::endl << std::flush;
 
 
@@ -110,20 +110,20 @@ void StateController::resetMaxon(){
 
 void StateController::inspectionSteeringAngleCallback(const std_msgs::msg::Float64::SharedPtr msg){//to test the maxon with the jetson
     // Handle inspection steering angle callback
-    auto angle = msg->data;
+    float angle = msg->data;
+    std::cout<<"angle: "<<angle<<std::endl;
+    sendPosToMaxon(angle);
+}
 
+void StateController::sendPosToMaxon(float angle){
+    //receives the angle and calculates the position with the offset
     long raw_pos= RAD_ST_ANGLE_TO_ACTUATOR_POS(angle);
-    long pos = relative_maxon_zero + raw_pos;
     if(raw_pos>MAX_ACTUATOR_POS || raw_pos<-MAX_ACTUATOR_POS){
         RCLCPP_ERROR(this->get_logger(), "Position out of range: %ld", raw_pos);
         return;
     }
-    std::cout<<"angle: "<<angle<<std::endl;
-    sendPosToMaxon(pos);
-}
-
-void StateController::sendPosToMaxon(long pos){
-    //receives the position with the offser already added
+    long pos = relative_maxon_zero + raw_pos;
+    
     struct can_frame frame;
     frame.can_id = 0x205;
     frame.can_dlc = 2;
@@ -141,7 +141,7 @@ void StateController::sendPosToMaxon(long pos){
     }
     this->send_can_frame(frame);
 
-    //print to see the values in the array for debugging
+    //print to see the values in the array for debugging purposes
     for (int i = 0; i < frame.can_dlc; i++) {
         std::cout << "0x" << std::hex << std::uppercase << static_cast<int>(frame.data[i]) << " ";
     }
@@ -155,13 +155,17 @@ void StateController::sendPosToMaxon(long pos){
 
 void StateController::spacCallback(const lart_msgs::msg::DynamicsCMD::SharedPtr msg){
     // Handle spac callback
-    struct can_frame frame;
+    
+    sendPosToMaxon(msg->steering_angle);
+
+    //send RPM to can
+    /*struct can_frame frame;
     frame.can_id = CAN_AS_DYNAMICS_ONE;
     frame.can_dlc = 8;
     for (int i = 0; i < frame.can_dlc; i++){
         frame.data[i] = 0;
     }
-    (void) msg;//to be removed
+    */
 }
 
 void StateController::missionFinishedCallback(const lart_msgs::msg::State::SharedPtr msg){
@@ -187,7 +191,7 @@ void StateController::emergencyCallback(const lart_msgs::msg::State::SharedPtr m
     }
 }
 
-// Send frame
+// Send frame with state every 200ms
 void StateController::send_can_frames(){
     struct can_frame frame;
     frame.can_id = CAN_AS_STATUS;
@@ -224,11 +228,11 @@ void StateController::handle_can_frame(struct can_frame frame){
             statusword1 = MAP_DECODE_PDO_TXONE_STATUSWORD(frame.data);
             mode = MAP_DECODE_PDO_TXONE_MODES_OF_OPERATION(frame.data);
             error_code = MAP_DECODE_PDO_TXONE_ERROR_CODE(frame.data);
-            std::cout<<"statusword: "<<statusword1<<std::endl;
-            std::cout<<"mode: "<<mode<<std::endl;
+            //std::cout<<"statusword: "<<statusword1<<std::endl;
+            //std::cout<<"mode: "<<mode<<std::endl;
             std::cout<<"error_code: "<<error_code<<std::endl;
             // Handle maxon feedback
-            if(error_code!=0){
+            /*if(error_code==0){//error value is 0 when the maxon is in error, don't ask me why, it makes no sense
                 RCLCPP_ERROR(this->get_logger(), "Error code: %d", error_code);
                 struct can_frame frame;
                 frame.can_dlc = 8;
@@ -240,10 +244,11 @@ void StateController::handle_can_frame(struct can_frame frame){
                 frame.data[1] = 0x05;
                 send_can_frame(frame);
                 maxon_activation();
-            }
+            }*/
     
             break;
-        case PDO_TXTWO_MAXON():
+        //not being used
+        /*case PDO_TXTWO_MAXON():
             //maxon feedback
             target_position = MAP_DECODE_PDO_TXTWO_TARGET_POSITION(frame.data);
             target_speed = MAP_DECODE_PDO_TXTWO_TARGET_SPEED(frame.data);
@@ -251,7 +256,7 @@ void StateController::handle_can_frame(struct can_frame frame){
             std::cout<<"target_position: "<<target_position<<std::endl;
             std::cout<<"target_speed: "<<target_speed<<std::endl;
 
-            break;
+            break;*/
         case PDO_TXTHREE_MAXON():
             //maxon feedback
             statusword2 = MAP_DECODE_PDO_TXTHREE_STATUSWORD(frame.data);
@@ -262,11 +267,12 @@ void StateController::handle_can_frame(struct can_frame frame){
                 relative_zero_set = true;
             }
             // Handle maxon feedback
-            std::cout<<"statusword: "<<statusword2<<std::endl;
+            //std::cout<<"statusword: "<<statusword2<<std::endl;
             std::cout<<"actual_position: "<<actual_position<<std::endl;
-            std::cout<<"actual_moment: "<<actual_moment<<std::endl;
+            //std::cout<<"actual_moment: "<<actual_moment<<std::endl;
             break;
-        case PDO_TXFOUR_MAXON():
+        //information not needed for now
+        /*case PDO_TXFOUR_MAXON():
             //maxon feedback
             statusword3 = MAP_DECODE_PDO_TXFOUR_STATUSWORD(frame.data);
             actual_speed = MAP_DECODE_PDO_TXFOUR_ACTUAL_SPEED(frame.data);
@@ -276,12 +282,12 @@ void StateController::handle_can_frame(struct can_frame frame){
             std::cout<<"actual_speed: "<<actual_speed<<std::endl;
             std::cout<<"actual_pwm_duty: "<<actual_pwm_duty<<std::endl;
 
-            break;
+            break;*/
         case CAN_AS_STATUS:
             // Handle ACU state frame
             uint32_t status = MAP_DECODE_AS_STATE(frame.data);
             uint32_t mission = MAP_DECODE_AS_MISSION(frame.data);//publish mission to computer
-            (void) mission;//to be removed
+            (void) mission;//void to be removed
 
             if(status == lart_msgs::msg::State::READY && state_msg.data != lart_msgs::msg::State::READY){
                 ready_change = std::chrono::steady_clock::now(); //save the time the state was changed to ready

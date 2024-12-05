@@ -56,7 +56,7 @@ private:
   void emergencyCallback(const lart_msgs::msg::State::SharedPtr msg);
   void inspectionSteeringAngleCallback(const std_msgs::msg::Float64::SharedPtr msg);
   void maxon_activation();
-  void sendPosToMaxon(long pos);
+  void sendPosToMaxon(float angle);
   void resetMaxon();
 
 
