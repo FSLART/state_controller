@@ -7,13 +7,15 @@ StateController::StateController() : Node("state_controller"){
 
     emergency_sub_ = this->create_subscription<lart_msgs::msg::State>("/pc_origin/emergency", 10, std::bind(&StateController::emergencyCallback, this, _1));//decide the topic name
 
-    spac_sub_ = this->create_subscription<lart_msgs::msg::DynamicsCMD>("spacccccc", 10, std::bind(&StateController::spacCallback, this, _1));//change for right topic name
+    spac_sub_ = this->create_subscription<lart_msgs::msg::DynamicsCMD>("/pc_origin/dynamics", 10, std::bind(&StateController::spacCallback, this, _1));//change for right topic name
 
+    spac_publisher = this->create_publisher<lart_msgs::msg::Dynamics>("/acu_origin/dynamics", 10);
+    
     state_publisher_ = this->create_publisher<lart_msgs::msg::State>("/pc_origin/system_status/critical_as/state", 10);
 
     mission_publisher_ = this->create_publisher<lart_msgs::msg::Mission>("/pc_origin/system_status/critical_as/mission", 10);
 
-    inspection_steering_angle_sub_ = this->create_subscription<std_msgs::msg::Float64>("steering_cmd", 10, std::bind(&StateController::inspectionSteeringAngleCallback, this, _1));
+    inspection_steering_angle_sub_ = this->create_subscription<lart_msgs::msg::DynamicsCMD>("/cmd", 10, std::bind(&StateController::inspectionSteeringAngleCallback, this, _1));
 
     state_msg.data = lart_msgs::msg::State::OFF; // initialize state as off
     
@@ -45,7 +47,8 @@ StateController::StateController() : Node("state_controller"){
         exit(1);         
     }
     //activate the actuator
-    //resetMaxon();
+    resetMaxon();
+    usleep(1000000);
     maxon_activation();
 
     // create a thread to read CAN frames
@@ -58,44 +61,45 @@ StateController::StateController() : Node("state_controller"){
 }
 
 void StateController::maxon_activation(){
-    std::cout<<"maxon activation"<<std::endl << std::flush;
+    while(!maxon_activated){
+        std::cout<<"maxon activation"<<std::endl << std::flush;
 
-    struct can_frame frame;
+        struct can_frame frame;
 
-    frame.can_dlc = 2;
+        frame.can_dlc = 2;
 
-    frame.can_id = 0x00;//id for initialization
-    frame.data[0] = 0x00; //turn on the maxon
-    frame.data[1] = 0x05;
-    send_can_frame(frame);
-    usleep(1000000); //sleep for 200ms for maxon to change modes
-    std::cout<<"maxon initiated"<<std::endl << std::flush;
+        frame.can_id = 0x00;//id for initialization
+        frame.data[0] = 0x00; //turn on the maxon
+        frame.data[1] = 0x05;
+        send_can_frame(frame);
+        usleep(1000000); //sleep for 200ms for maxon to change modes
+        std::cout<<"maxon initiated"<<std::endl << std::flush;
 
-    frame.data[0]=0x80;//pre op mode
-    frame.data[1]=0x05;
-    send_can_frame(frame);
-    usleep(1000000);
-    std::cout<<"maxon in pre op mode"<<std::endl << std::flush;
+        frame.data[0]=0x80;//pre op mode
+        frame.data[1]=0x05;
+        send_can_frame(frame);
+        usleep(1000000);
+        std::cout<<"maxon in pre op mode"<<std::endl << std::flush;
 
-    frame.data[0]=0x01;//op mode
-    frame.data[1]=0x05;
-    send_can_frame(frame);
-    usleep(1000000);
-    std::cout<<"maxon in op mode"<<std::endl << std::flush;
+        frame.data[0]=0x01;//op mode
+        frame.data[1]=0x05;
+        send_can_frame(frame);
+        usleep(1000000);
+        std::cout<<"maxon in op mode"<<std::endl << std::flush;
 
-    frame.can_id = 0x205;
-    frame.data[0]=0x06;
-    frame.data[1]=0x00;
-    send_can_frame(frame);
-    usleep(1000000);
-    std::cout<<"sent 0x06 to 0x205"<<std::endl << std::flush;
+        frame.can_id = 0x205;
+        frame.data[0]=0x06;
+        frame.data[1]=0x00;
+        send_can_frame(frame);
+        usleep(1000000);
+        std::cout<<"sent 0x06 to 0x205"<<std::endl << std::flush;
 
 
-    frame.data[0]=0x0F;
-    frame.data[1]=0x00;
-    send_can_frame(frame);
-    std::cout<<"sent 0x0F to 0x205"<<std::endl << std::flush;
-
+        frame.data[0]=0x0F;
+        frame.data[1]=0x00;
+        send_can_frame(frame);
+        std::cout<<"sent 0x0F to 0x205"<<std::endl << std::flush;
+    }
     std::cout<<"maxon activated"<<std::endl << std::flush;
 }
 
@@ -108,11 +112,20 @@ void StateController::resetMaxon(){
     send_can_frame(frame);
 }
 
-void StateController::inspectionSteeringAngleCallback(const std_msgs::msg::Float64::SharedPtr msg){//to test the maxon with the jetson
+void StateController::inspectionSteeringAngleCallback(const lart_msgs::msg::DynamicsCMD::SharedPtr msg){//to test the maxon with the jetson
     // Handle inspection steering angle callback
-    float angle = msg->data;
+    float angle = msg->steering_angle;
     std::cout<<"angle: "<<angle<<std::endl;
+    uint16_t rpm = msg->rpm;
+
     sendPosToMaxon(angle);
+    std::cout<<"RPM: "<<rpm<<std::endl;
+    /*struct can_frame frame;
+    frame.can_id = ACU_RPM_ID;//to be defined
+    frame.can_dlc = 2;
+    frame.data[0] = rpm & 0xFF;
+    frame.data[1] = (rpm >> 8) & 0xFF;
+    send_can_frame(frame);*/
 }
 
 void StateController::sendPosToMaxon(float angle){
@@ -131,10 +144,10 @@ void StateController::sendPosToMaxon(float angle){
     this->send_can_frame(frame);
     usleep(1000);
 
-    frame.can_id = 0x405;//pc to maxon id
+    frame.can_id = 0x405;//pc to maxon position id
     frame.can_dlc = 6;
 
-    frame.data[0] = 0x1F;
+    frame.data[0] = 0x3F;
     frame.data[1] = 0x00;
     for (int i = 0; i < 4; ++i) {
         frame.data[2 + i] = (pos >> (8 * i)) & 0xFF; // Extract each byte
@@ -156,16 +169,17 @@ void StateController::sendPosToMaxon(float angle){
 void StateController::spacCallback(const lart_msgs::msg::DynamicsCMD::SharedPtr msg){
     // Handle spac callback
     
+    //send steering position to maxon
     sendPosToMaxon(msg->steering_angle);
 
     //send RPM to can
-    /*struct can_frame frame;
-    frame.can_id = CAN_AS_DYNAMICS_ONE;
-    frame.can_dlc = 8;
-    for (int i = 0; i < frame.can_dlc; i++){
-        frame.data[i] = 0;
-    }
-    */
+    uint16_t rpm= msg->rpm;
+    struct can_frame frame;
+    frame.can_id = ACU_RPM_ID;//to be defined
+    frame.can_dlc = 2;
+    frame.data[0] = rpm & 0xFF;
+    frame.data[1] = (rpm >> 8) & 0xFF;
+    send_can_frame(frame);
 }
 
 void StateController::missionFinishedCallback(const lart_msgs::msg::State::SharedPtr msg){
@@ -223,6 +237,15 @@ void StateController::send_can_frame(struct can_frame frame){
 // Handle CAN frame
 void StateController::handle_can_frame(struct can_frame frame){
     switch (frame.can_id){
+        case ACU_RPM_ID:{
+            // Handle ACU RPM frame
+            uint16_t rpm = frame.data[0] | (frame.data[1] << 8);
+            lart_msgs::msg::Dynamics spac_msg;
+            spac_msg.rpm = rpm;
+            spac_publisher->publish(spac_msg);
+            break;
+        }
+
         case PDO_TXONE_MAXON():
             //maxon feedback
             statusword1 = MAP_DECODE_PDO_TXONE_STATUSWORD(frame.data);
@@ -230,10 +253,11 @@ void StateController::handle_can_frame(struct can_frame frame){
             error_code = MAP_DECODE_PDO_TXONE_ERROR_CODE(frame.data);
             //std::cout<<"statusword: "<<statusword1<<std::endl;
             //std::cout<<"mode: "<<mode<<std::endl;
-            std::cout<<"error_code: "<<error_code<<std::endl;
+            std::cout<<"error_code(actual current): "<<error_code<<std::endl;
             // Handle maxon feedback
-            /*if(error_code==0){//error value is 0 when the maxon is in error, don't ask me why, it makes no sense
+            if(error_code==0 && maxon_activated){//error value is actually the current being pulled by the motor, when maxon is in error state, the value is 0
                 RCLCPP_ERROR(this->get_logger(), "Error code: %d", error_code);
+                maxon_activated = false;
                 struct can_frame frame;
                 frame.can_dlc = 8;
                 frame.can_id = 0x00;//id for reset
@@ -244,7 +268,7 @@ void StateController::handle_can_frame(struct can_frame frame){
                 frame.data[1] = 0x05;
                 send_can_frame(frame);
                 maxon_activation();
-            }*/
+            }
     
             break;
         //not being used
@@ -257,10 +281,13 @@ void StateController::handle_can_frame(struct can_frame frame){
             std::cout<<"target_speed: "<<target_speed<<std::endl;
 
             break;*/
+        
+        
         case PDO_TXTHREE_MAXON():
             //maxon feedback
             statusword2 = MAP_DECODE_PDO_TXTHREE_STATUSWORD(frame.data);
             actual_position = MAP_DECODE_PDO_TXTHREE_ACTUAL_POSITION(frame.data);
+            maxon_activated = true;
             actual_moment = MAP_DECODE_PDO_TXTHREE_ACTUAL_MOMENT(frame.data);
             if(!relative_zero_set){
                 relative_maxon_zero = actual_position;

@@ -29,6 +29,7 @@
 #include "lart_msgs/msg/mission.hpp"
 #include "lart_msgs/msg/as_status.hpp"
 #include "lart_msgs/msg/dynamics_cmd.hpp"
+#include "lart_msgs/msg/dynamics.hpp"
 #include "./Can-Header-Map/CAN_asdb.h"
 #include "./Can-Header-Map/CANOPEN_maxondb.h"
 #include "lart_common.h"
@@ -36,6 +37,7 @@
 #define T24E_CAN_INTERFACE "can0"
 #define REMOTE_NODE_ID 0x05
 #define MAX_ACTUATOR_POS 492200
+#define ACU_RPM_ID 0x50
 
 
 //#define RES_READY_CAN_ID 0x0B//see real id
@@ -54,7 +56,7 @@ private:
   void handle_can_frame(struct can_frame frame);
   void spacCallback(const lart_msgs::msg::DynamicsCMD::SharedPtr msg);
   void emergencyCallback(const lart_msgs::msg::State::SharedPtr msg);
-  void inspectionSteeringAngleCallback(const std_msgs::msg::Float64::SharedPtr msg);
+  void inspectionSteeringAngleCallback(const lart_msgs::msg::DynamicsCMD::SharedPtr msg);
   void maxon_activation();
   void sendPosToMaxon(float angle);
   void resetMaxon();
@@ -70,6 +72,8 @@ private:
   bool res_ready;
   bool relative_zero_set; // flag to check if relative zero is set
   long relative_maxon_zero; // relative zero value
+  bool maxon_activated;
+
 
   //id 0x185
   uint32_t statusword1;
@@ -99,6 +103,9 @@ private:
   //spac subscription
   rclcpp::Subscription<lart_msgs::msg::DynamicsCMD>::SharedPtr spac_sub_;
 
+  //spac publisher
+  rclcpp::Publisher<lart_msgs::msg::Dynamics>::SharedPtr spac_publisher;
+
   // emergency stop subscription
   rclcpp::Subscription<lart_msgs::msg::State>::SharedPtr emergency_sub_;
 
@@ -109,7 +116,7 @@ private:
   rclcpp::Publisher<lart_msgs::msg::Mission>::SharedPtr mission_publisher_;
 
   //inspection steering angle publisher
-  rclcpp::Subscription<std_msgs::msg::Float64>::SharedPtr inspection_steering_angle_sub_;
+  rclcpp::Subscription<lart_msgs::msg::DynamicsCMD>::SharedPtr inspection_steering_angle_sub_;
 };
 
 #endif
