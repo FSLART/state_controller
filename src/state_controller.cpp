@@ -141,13 +141,14 @@ void StateController::sendPosToMaxon(float angle){
     frame.can_id = 0x205;
     frame.can_dlc = 2;
     frame.data[0] = 0x0F;
+    frame.data[1] = 0x00;
     this->send_can_frame(frame);
     usleep(1000);
 
     frame.can_id = 0x405;//pc to maxon position id
     frame.can_dlc = 6;
 
-    frame.data[0] = 0x3F;
+    frame.data[0] = 0x3F; //With 0x3F the maxon starts moving immediately to that position, does not wait to reach the previous position
     frame.data[1] = 0x00;
     for (int i = 0; i < 4; ++i) {
         frame.data[2 + i] = (pos >> (8 * i)) & 0xFF; // Extract each byte
@@ -289,7 +290,7 @@ void StateController::handle_can_frame(struct can_frame frame){
             actual_position = MAP_DECODE_PDO_TXTHREE_ACTUAL_POSITION(frame.data);
             maxon_activated = true;
             actual_moment = MAP_DECODE_PDO_TXTHREE_ACTUAL_MOMENT(frame.data);
-            if(!relative_zero_set){
+            if(!relative_zero_set){ //while the eletronics department does not have the steering wheel angle sensor, the relative zero is set to the first position of the maxon THE WHEELS MUST BE STRAIGHT
                 relative_maxon_zero = actual_position;
                 relative_zero_set = true;
             }
@@ -339,7 +340,7 @@ void StateController::read_can_frame(){
 			RCLCPP_ERROR(this->get_logger(), "Failed to read CAN frame: %s", strerror(errno));
 			return;
 		}
-		handle_can_frame(frame);    
+		handle_can_frame(frame);// Send the received can frame to a function that handles it
 	}
 }
 

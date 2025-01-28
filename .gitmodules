@@ -1,0 +1,3 @@
+[submodule "include/lart_common"]
+	path = include/lart_common
+	url = https://github.com/FSLART/lart_common.git
