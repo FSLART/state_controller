@@ -1,3 +1,6 @@
 [submodule "include/lart_common"]
 	path = include/lart_common
 	url = https://github.com/FSLART/lart_common.git
+[submodule "include/Can-Header-Map"]
+	path = include/Can_Header_Map
+	url = https://github.com/FSLART/Can-Header-Map.git
