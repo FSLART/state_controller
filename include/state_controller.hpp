@@ -7,6 +7,7 @@
  */
 #ifndef STATE_CONTROLLER_HPP
 #define STATE_CONTROLLER_HPP
+#define __LART_AXANATO_VCU_GATEWAY__
 
 #include <functional>
 #include <memory>
@@ -38,8 +39,8 @@
 #include "lart_msgs/msg/dynamics_cmd.hpp"
 #include "lart_msgs/msg/dynamics.hpp"
 #include "./Can-Header-Map/CAN_asdb.h"
-#include "./Can-Header-Map/CANOPEN_maxondb.h"
-#include "./lart_common/lart_common.h"
+#include "./Can-Header-Map/CANOPEN_db.h"
+#include "lart_common.h"
 
 #define T24E_CAN_INTERFACE "can0"
 #define REMOTE_NODE_ID 0x05
@@ -130,6 +131,10 @@ private:
    * 
    */
   void resetMaxon();
+  /**
+  * @brief This function uses a liner regression to get and aproximate steering ratio for given angle
+  */
+  //float steeringRatio(float angle);
 
 
   // class variables
