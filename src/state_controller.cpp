@@ -47,8 +47,8 @@ StateController::StateController() : Node("state_controller"){
         exit(1);
     }
     //activate the actuator
-    resetMaxon();
-    usleep(1000000);
+    //resetMaxon();
+    //usleep(1000000);
     //maxon_activation();
 
     // create a thread to read CAN frames
@@ -71,28 +71,28 @@ void StateController::maxon_activation(){
 
         frame.can_id = 0x00;//id for initialization
         frame.data[0] = 0x00; //turn on the maxon
-        frame.data[1] = 0x05;
-        send_can_frame(frame);
-        usleep(1000000); //sleep for 200ms for maxon to change modes
+        frame.data[1] = 0x00;
+        //send_can_frame(frame);
+        //usleep(5000); //sleep for 200ms for maxon to change modes
         RCLCPP_INFO(this->get_logger(), "maxon initiated");
 
         frame.data[0]=0x80;//pre op mode
         frame.data[1]=0x05;
-        send_can_frame(frame);
-        usleep(1000000);
+        //send_can_frame(frame);
+        //usleep(5000);
         RCLCPP_INFO(this->get_logger(), "maxon in pre op mode");
 
         frame.data[0]=0x01;//op mode
-        frame.data[1]=0x05;
+        frame.data[1]=0x00;
         send_can_frame(frame);
-        usleep(1000000);
+        //usleep(5000);
         RCLCPP_INFO(this->get_logger(), "maxon in op mode");
 
         frame.can_id = 0x205;
         frame.data[0]=0x06;
         frame.data[1]=0x00;
         send_can_frame(frame);
-        usleep(1000000);
+        //usleep(5000);
         RCLCPP_INFO(this->get_logger(), "sent 0x06 to 0x205");
 
 
@@ -100,6 +100,7 @@ void StateController::maxon_activation(){
         frame.data[1]=0x00;
         send_can_frame(frame);
         RCLCPP_INFO(this->get_logger(), "sent 0x0F to 0x205");
+        usleep(10000);
     }
      RCLCPP_INFO(this->get_logger(), "maxon activated");
 }
