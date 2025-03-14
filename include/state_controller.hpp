@@ -46,6 +46,7 @@
 #define REMOTE_NODE_ID 0x05
 #define MAX_ACTUATOR_POS 492200 //assuming a maximum steering wheel angle of 105 degrees
 #define ACU_RPM_ID 0x50
+#define RES_CAN_ID 0x190
 
 
 //#define RES_READY_CAN_ID 0x0B//see real id
@@ -136,6 +137,18 @@ private:
   */
   //float steeringRatio(float angle);
 
+  /**
+   * @brief This function sets the state to emergency
+   * 
+   */
+  void setEmergency();
+  
+  /**
+   * @brief This function sends the current state 
+   */
+  void sendState();
+  
+
 
   // class variables
   int s=-1;//socket descriptor
@@ -148,6 +161,8 @@ private:
   bool relative_zero_set; // flag to check if relative zero is set
   long relative_maxon_zero; // relative zero value (maxon encoder position)
   bool maxon_activated;
+  uint16_t current_rpm = 0;//save the current speed
+  lart_msgs::msg::Mission mission;//save the mission
 
 
   //id 0x185
