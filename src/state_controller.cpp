@@ -373,7 +373,7 @@ void StateController::handle_can_frame(struct can_frame frame){
             break;
             }  
 
-        case CAN_AS_STATUS:
+        case 0x512:
             // Handle ACU state frame
             uint32_t status = MAP_DECODE_AS_STATE(frame.data);
             this->mission.data = MAP_DECODE_AS_MISSION(frame.data); // save the mission
