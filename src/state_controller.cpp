@@ -112,7 +112,6 @@ void StateController::maxon_activation(){
 void StateController::resetMaxon(){
     struct can_frame frame;
     frame.can_id = 0x00;//id for resetMaxon();
-    usleep(1000000);
     frame.can_dlc = 2;
     frame.data[0] = 0x81; //reset the maxon
     frame.data[1] = 0x05;
@@ -153,7 +152,6 @@ void StateController::sendPosToMaxon(float angle){
     frame.data[0] = 0x0F;
     frame.data[1] = 0x00;
     this->send_can_frame(frame);
-    usleep(1000);
 
     frame.can_id = 0x405;//pc to maxon position id
     frame.can_dlc = 6;
@@ -278,6 +276,11 @@ void StateController::send_can_frame(struct can_frame frame){
 // Handle CAN frame
 void StateController::handle_can_frame(struct can_frame frame){
     switch (frame.can_id){
+        case 0x51:
+            frame.can_id = 0x61;
+            send_can_frame(frame);
+            break;
+
         case CAN_TOJAL_SEND_RPM:{
             // Handle ACU RPM frame
             uint16_t rpm = MAP_DECODE_TOJAL_RPM(frame.data);
@@ -375,9 +378,11 @@ void StateController::handle_can_frame(struct can_frame frame){
 
         case 0x512:
             // Handle ACU state frame
-            uint32_t status = MAP_DECODE_AS_STATE(frame.data);
-            this->mission.data = MAP_DECODE_AS_MISSION(frame.data); // save the mission
-            this->mission_publisher_->publish(this->mission); // send the mission to the mission controller
+            // uint32_t status = MAP_DECODE_AS_STATE(frame.data);
+            //this->mission.data = MAP_DECODE_AS_MISSION(frame.data); // save the mission
+            //this->mission_publisher_->publish(this->mission); // send the mission to the mission controller
+
+            uint32_t status = frame.data[0];
 
             if(status == lart_msgs::msg::State::READY && state_msg.data != lart_msgs::msg::State::READY){
                 
