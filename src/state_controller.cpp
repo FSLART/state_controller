@@ -55,14 +55,14 @@ StateController::StateController() : Node("state_controller"){
    std::thread read_can_thread(&StateController::read_can_frame, this);
    read_can_thread.detach();
 
-    // std::thread send_can_thread(&StateController::send_can_frames, this);
-    // send_can_thread.detach();
+    std::thread send_can_thread(&StateController::send_can_frames, this);
+    send_can_thread.detach();
 
     maxon_activation();
 
-    rclcpp::on_shutdown([this]() {
-        resetMaxon();
-    });
+    // rclcpp::on_shutdown([this]() {
+    //     resetMaxon();
+    // });
 }
 
 void StateController::maxon_activation(){
@@ -82,7 +82,7 @@ void StateController::maxon_activation(){
 
         frame.data[0]=0x80;//pre op mode
         frame.data[1]=0x05;
-        //send_can_frame(frame);
+        send_can_frame(frame);
         //usleep(5000);
         RCLCPP_INFO(this->get_logger(), "maxon in pre op mode");
 
@@ -95,16 +95,20 @@ void StateController::maxon_activation(){
         frame.can_id = 0x205;
         frame.data[0]=0x06;
         frame.data[1]=0x00;
-        send_can_frame(frame);
-        //usleep(5000);
+	    //for (int i=0; i<10;i++){
+            send_can_frame(frame);
+        // }
+        usleep(5000);
         RCLCPP_INFO(this->get_logger(), "sent 0x06 to 0x205");
 
 
         frame.data[0]=0x0F;
         frame.data[1]=0x00;
-        send_can_frame(frame);
+        //for (int i=0; i<10;i++){
+            send_can_frame(frame);
+        //}
         RCLCPP_INFO(this->get_logger(), "sent 0x0F to 0x205");
-        usleep(10000);
+        usleep(100000);
     }
      RCLCPP_INFO(this->get_logger(), "maxon activated");
 }
@@ -200,7 +204,7 @@ void StateController::missionFinishedCallback(const lart_msgs::msg::State::Share
             {
                 std::lock_guard<std::mutex> guard(this->state_mutex);
                 this->state_msg.data = lart_msgs::msg::State::FINISH;
-                this->sendState();
+                // this->sendState();
             }
         }else{
             this->setEmergency();
@@ -224,30 +228,33 @@ void StateController::setEmergency(){
     state_publisher_->publish(this->state_msg);
     struct can_frame frame;
     frame.can_id = CAN_AS_STATUS;
-    frame.can_dlc = 8;
+    frame.can_dlc = 1;
     memset(frame.data, 0, frame.can_dlc);
     {
         std::lock_guard<std::mutex> guard(this->state_mutex);
-        MAP_ENCODE_AS_STATE(frame.data, this->state_msg.data);
+        // MAP_ENCODE_AS_STATE(frame.data, this->state_msg.data);
+        frame.data[0]=this->state_msg.data;
         this->send_can_frame(frame);
     }
 }
 
 // Send frame with state every 200ms
 void StateController::send_can_frames(){
-    struct can_frame frame;
-    frame.can_id = CAN_AS_STATUS;
-    frame.can_dlc = 8;
-    /*for (int i = 0; i < frame.can_dlc; i++){
-        frame.data[i] = 0;
-    }*/
-    memset(frame.data, 0, frame.can_dlc);
+    //struct can_frame frame;
+    // frame.can_id = CAN_AS_STATUS;
+    // frame.can_dlc = 8;
+    // /*for (int i = 0; i < frame.can_dlc; i++){
+    //     frame.data[i] = 0;turn off can interface
+    // }*/
+    // memset(frame.data, 0, frame.can_dlc);
     while(rclcpp::ok()){
         {
-            std::lock_guard<std::mutex> guard(this->state_mutex);
-            this->state_publisher_->publish(this->state_msg);
-            MAP_ENCODE_AS_STATE(frame.data, state_msg.data);
-            this->send_can_frame(frame);
+            // std::lock_guard<std::mutex> guard(this->state_mutex);
+            // this->state_publisher_->publish(this->state_msg);
+            // // MAP_ENCODE_AS_STATE(frame.data, this->state_msg.data);
+            // frame.data[0]=this->state_msg.data;
+            // this->send_can_frame(frame);
+            this->sendState();
         }
         std::this_thread::sleep_for(std::chrono::milliseconds(200));
     }
@@ -256,13 +263,16 @@ void StateController::send_can_frames(){
 void StateController::sendState(){
     struct can_frame frame;
     frame.can_id = CAN_AS_STATUS;
-    frame.can_dlc = 8;
+    frame.can_dlc = 1;
     memset(frame.data, 0, frame.can_dlc);
     {
         std::lock_guard<std::mutex> guard(this->state_mutex);
         this->state_publisher_->publish(this->state_msg);
-        MAP_ENCODE_AS_STATE(frame.data, state_msg.data);
-        this->send_can_frame(frame);
+        // MAP_ENCODE_AS_STATE(frame.data, this->state_msg.data);
+        frame.data[0]=this->state_msg.data;
+        for (int i = 0; i <10 ; i++){
+            this->send_can_frame(frame);
+        }
     }
 }
 
@@ -361,11 +371,13 @@ void StateController::handle_can_frame(struct can_frame frame){
             // Receive the go signal
             uint8_t res_response = frame.data[0];
             if(res_response == 0x05 || res_response == 0x07){ //received the res ready signal
-                if((std::chrono::steady_clock::now() - ready_change) >= std::chrono::seconds(5) && state_msg.data == lart_msgs::msg::State::READY){
+                if((std::chrono::steady_clock::now() - ready_change) >= std::chrono::seconds(5) && this->state_msg.data == lart_msgs::msg::State::READY){
                     {
                         std::lock_guard<std::mutex> guard(this->state_mutex);
                         this->state_msg.data = lart_msgs::msg::State::DRIVING;
                     }
+                    //this->sendState();
+                    // this->state_msg.data = lart_msgs::msg::State::DRIVING;
                     this->state_publisher_->publish(this->state_msg);
                 }
             }
@@ -384,14 +396,14 @@ void StateController::handle_can_frame(struct can_frame frame){
 
             uint32_t status = frame.data[0];
 
-            if(status == lart_msgs::msg::State::READY && state_msg.data != lart_msgs::msg::State::READY){
+            if(status == lart_msgs::msg::State::READY && this->state_msg.data != lart_msgs::msg::State::READY){
                 
                 ready_change = std::chrono::steady_clock::now(); //save the time the state was changed to ready
                 {
                     std::lock_guard<std::mutex> guard(this->state_mutex);
                     this->state_msg.data = lart_msgs::msg::State::READY;
                 }
-                this->sendState();
+                //this->sendState();
 
             }
             break;

@@ -46,7 +46,7 @@
 #define REMOTE_NODE_ID 0x05
 #define MAX_ACTUATOR_POS 492200 //assuming a maximum steering wheel angle of 105 degrees
 #define ACU_RPM_ID 0x50
-#define RES_CAN_ID 0x190
+#define RES_CAN_ID 0x191
 
 
 //#define RES_READY_CAN_ID 0x0B//see real id
