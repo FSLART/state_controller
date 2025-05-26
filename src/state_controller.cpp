@@ -46,10 +46,6 @@ StateController::StateController() : Node("state_controller"){
         RCLCPP_ERROR(this->get_logger(), "Failed to bind socket: %s", strerror(errno));
         exit(1);
     }
-    //activate the actuator
-    //resetMaxon();
-    //usleep(1000000);
-    //maxon_activation();
 
     // create a thread to read CAN frames
    std::thread read_can_thread(&StateController::read_can_frame, this);
@@ -60,9 +56,9 @@ StateController::StateController() : Node("state_controller"){
 
     maxon_activation();
 
-    // rclcpp::on_shutdown([this]() {
-    //     resetMaxon();
-    // });
+    rclcpp::on_shutdown([this]() {
+        resetMaxon();
+    });
 }
 
 void StateController::maxon_activation(){
@@ -74,14 +70,14 @@ void StateController::maxon_activation(){
         frame.can_dlc = 2;
 
         frame.can_id = 0x00;//id for initialization
-        frame.data[0] = 0x00; //turn on the maxon
-        frame.data[1] = 0x00;
-        //send_can_frame(frame);
+        frame.data[0] = 0x00; 
+        frame.data[1] = 0x00; //activate maxon and RES
+        send_can_frame(frame);
         //usleep(5000); //sleep for 200ms for maxon to change modes
         RCLCPP_INFO(this->get_logger(), "maxon initiated");
 
         frame.data[0]=0x80;//pre op mode
-        frame.data[1]=0x05;
+        frame.data[1]=NODE_ID_STEERING;
         send_can_frame(frame);
         //usleep(5000);
         RCLCPP_INFO(this->get_logger(), "maxon in pre op mode");
@@ -92,7 +88,7 @@ void StateController::maxon_activation(){
         //usleep(5000);
         RCLCPP_INFO(this->get_logger(), "maxon in op mode");
 
-        frame.can_id = 0x205;
+        frame.can_id = 0x200 + NODE_ID_STEERING;
         frame.data[0]=0x06;
         frame.data[1]=0x00;
 	    //for (int i=0; i<10;i++){
@@ -118,7 +114,7 @@ void StateController::resetMaxon(){
     frame.can_id = 0x00;//id for resetMaxon();
     frame.can_dlc = 2;
     frame.data[0] = 0x81; //reset the maxon
-    frame.data[1] = 0x05;
+    frame.data[1] = NODE_ID_STEERING
     send_can_frame(frame);
 }
 
@@ -135,7 +131,7 @@ void StateController::inspectionSteeringAngleCallback(const lart_msgs::msg::Dyna
     frame.can_dlc = 2;
     MAP_ENCODE_TOJAL_RPM(rpm_array, rpm);
     memcpy(frame.data,rpm_array,2);
-    //send_can_frame(frame);
+    send_can_frame(frame);
 }
 
 void StateController::sendPosToMaxon(float angle){
@@ -151,13 +147,13 @@ void StateController::sendPosToMaxon(float angle){
     long pos = relative_maxon_zero + raw_pos;
     
     struct can_frame frame;
-    frame.can_id = 0x205;
+    frame.can_id = 0x200 + NODE_ID_STEERING;
     frame.can_dlc = 2;
     frame.data[0] = 0x0F;
     frame.data[1] = 0x00;
     this->send_can_frame(frame);
 
-    frame.can_id = 0x405;//pc to maxon position id
+    frame.can_id = 0x400 + NODE_ID_STEERING;//pc to maxon position id
     frame.can_dlc = 6;
 
     frame.data[0] = 0x3F; //With 0x3F the maxon starts moving immediately to that position, does not wait to reach the previous position
@@ -240,20 +236,8 @@ void StateController::setEmergency(){
 
 // Send frame with state every 200ms
 void StateController::send_can_frames(){
-    //struct can_frame frame;
-    // frame.can_id = CAN_AS_STATUS;
-    // frame.can_dlc = 8;
-    // /*for (int i = 0; i < frame.can_dlc; i++){
-    //     frame.data[i] = 0;turn off can interface
-    // }*/
-    // memset(frame.data, 0, frame.can_dlc);
     while(rclcpp::ok()){
         {
-            // std::lock_guard<std::mutex> guard(this->state_mutex);
-            // this->state_publisher_->publish(this->state_msg);
-            // // MAP_ENCODE_AS_STATE(frame.data, this->state_msg.data);
-            // frame.data[0]=this->state_msg.data;
-            // this->send_can_frame(frame);
             this->sendState();
         }
         std::this_thread::sleep_for(std::chrono::milliseconds(200));
@@ -286,12 +270,12 @@ void StateController::send_can_frame(struct can_frame frame){
 // Handle CAN frame
 void StateController::handle_can_frame(struct can_frame frame){
     switch (frame.can_id){
-        case 0x51:
-            frame.can_id = 0x61;
+        case 0x51://mission from ACU Id
+            frame.can_id = 0x61; //Mission to ACU Id
             send_can_frame(frame);
             break;
 
-        case CAN_TOJAL_SEND_RPM:{
+        case CAN_TOJAL_SEND_RPM:{ //RPM from VCU to PC
             // Handle ACU RPM frame
             uint16_t rpm = MAP_DECODE_TOJAL_RPM(frame.data);
             lart_msgs::msg::Dynamics spac_msg;
@@ -326,6 +310,7 @@ void StateController::handle_can_frame(struct can_frame frame){
             }*/
     
             break;
+
         //not being used
         /*case PDO_TXTWO(NODE_ID_STEERING):
             //maxon feedback
@@ -338,9 +323,9 @@ void StateController::handle_can_frame(struct can_frame frame){
             break;*/
         
         
-        case 0x385:
+        case PDO_TXTHREE(NODE_ID_STEERING):
             //maxon feedback
-	    //RCLCPP_INFO(this->get_logger(), "I AM HERE, id 385");
+	        //RCLCPP_INFO(this->get_logger(), "I AM HERE, id 385");
             statusword2 = MAP_DECODE_PDO_TXTHREE_MAXON_STATUSWORD(frame.data);
             actual_position = MAP_DECODE_PDO_TXTHREE_MAXON_ACTUAL_POSITION(frame.data);
             maxon_activated = true;
@@ -354,6 +339,7 @@ void StateController::handle_can_frame(struct can_frame frame){
             //RCLCPP_INFO(this->get_logger(), "actual_position: ", actual_position);
             //std::cout<<"actual_moment: "<<actual_moment<<std::endl;
             break;
+
         //information not needed for now
         /*case PDO_TXFOUR(NODE_ID_STEERING):
             //maxon feedback
@@ -376,17 +362,17 @@ void StateController::handle_can_frame(struct can_frame frame){
                         std::lock_guard<std::mutex> guard(this->state_mutex);
                         this->state_msg.data = lart_msgs::msg::State::DRIVING;
                     }
-                    //this->sendState();
-                    // this->state_msg.data = lart_msgs::msg::State::DRIVING;
+                    this->sendState();
+                    this->state_msg.data = lart_msgs::msg::State::DRIVING;
                     this->state_publisher_->publish(this->state_msg);
                 }
             }
             if(res_response == 0x00){//received the res emergency signal
                 this->setEmergency();
-                resetMaxon();
+                //resetMaxon();
             }
             break;
-            }  
+        }  
 
         case 0x512:
             // Handle ACU state frame

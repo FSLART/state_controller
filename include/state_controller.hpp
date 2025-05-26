@@ -43,9 +43,7 @@
 #include "lart_common.h"
 
 #define T24E_CAN_INTERFACE "can0"
-#define REMOTE_NODE_ID 0x05
 #define MAX_ACTUATOR_POS 492200 //assuming a maximum steering wheel angle of 105 degrees
-#define ACU_RPM_ID 0x50
 #define RES_CAN_ID 0x191
 
 
