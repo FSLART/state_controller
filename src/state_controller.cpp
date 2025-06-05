@@ -88,7 +88,7 @@ void StateController::maxon_activation(){
         //usleep(5000);
         RCLCPP_INFO(this->get_logger(), "maxon in op mode");
 
-        frame.can_id = 0x200 + NODE_ID_STEERING;
+        frame.can_id = 0x205;
         frame.data[0]=0x06;
         frame.data[1]=0x00;
 	    //for (int i=0; i<10;i++){
@@ -114,7 +114,7 @@ void StateController::resetMaxon(){
     frame.can_id = 0x00;//id for resetMaxon();
     frame.can_dlc = 2;
     frame.data[0] = 0x81; //reset the maxon
-    frame.data[1] = NODE_ID_STEERING
+    frame.data[1] = NODE_ID_STEERING;
     send_can_frame(frame);
 }
 
@@ -138,7 +138,7 @@ void StateController::sendPosToMaxon(float angle){
     //receives the angle and calculates the position with the offset
     float ratio = STEERING_ANGLE_TO_RATIO(angle);
 
-    //long raw_pos= RAD_ST_ANGLE_TO_ACTUATOR_POS(angle);
+    // long raw_pos= RAD_ST_ANGLE_TO_ACTUATOR_POS(angle);
     long raw_pos= RAD_ST_TO_MAXON_POS_WITH_RATIO(angle,ratio);
     if(raw_pos>MAX_ACTUATOR_POS || raw_pos<-MAX_ACTUATOR_POS){
         RCLCPP_WARN(this->get_logger(), "Position out of range: %ld", raw_pos);
@@ -147,13 +147,13 @@ void StateController::sendPosToMaxon(float angle){
     long pos = relative_maxon_zero + raw_pos;
     
     struct can_frame frame;
-    frame.can_id = 0x200 + NODE_ID_STEERING;
+    frame.can_id = 0x205;
     frame.can_dlc = 2;
     frame.data[0] = 0x0F;
     frame.data[1] = 0x00;
     this->send_can_frame(frame);
 
-    frame.can_id = 0x400 + NODE_ID_STEERING;//pc to maxon position id
+    frame.can_id = 0x405;//pc to maxon position id
     frame.can_dlc = 6;
 
     frame.data[0] = 0x3F; //With 0x3F the maxon starts moving immediately to that position, does not wait to reach the previous position
@@ -323,7 +323,7 @@ void StateController::handle_can_frame(struct can_frame frame){
             break;*/
         
         
-        case PDO_TXTHREE(NODE_ID_STEERING):
+        case 0x385:
             //maxon feedback
 	        //RCLCPP_INFO(this->get_logger(), "I AM HERE, id 385");
             statusword2 = MAP_DECODE_PDO_TXTHREE_MAXON_STATUSWORD(frame.data);
