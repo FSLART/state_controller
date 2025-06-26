@@ -147,7 +147,7 @@ private:
    */
   void sendState();
   
-
+  std::string stateToString(int state);
 
   // class variables
   int s=-1;//socket descriptor

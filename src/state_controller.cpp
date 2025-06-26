@@ -19,7 +19,7 @@ StateController::StateController() : Node("state_controller"){
 
     state_msg.data = lart_msgs::msg::State::OFF; // initialize state as off
 
-    mission.data = lart_msgs::msg::Mission::MANUAL; // initialize mission as manual
+    mission.data = lart_msgs::msg::Mission::INSPECTION; // initialize mission as manual //CHANGE BACK TO MANUAL
     
     mission_finished = false;
 
@@ -57,6 +57,21 @@ StateController::StateController() : Node("state_controller"){
     send_can_thread.detach();
 
     maxon_activation();
+    
+    //initialize CAN open for res and maxon 
+    /*NEW!!*/
+    // struct can_frame frame;
+
+    // frame.can_dlc = 2;
+
+    // frame.can_id = 0x00;//id for initialization
+    // frame.data[0] = 0x00; 
+    // frame.data[1] = 0x00; //activate maxon and RES
+    // send_can_frame(frame);
+
+    // frame.data[0]=0x01;//op mode
+    // frame.data[1]=0x00;
+    // send_can_frame(frame);
 
     rclcpp::on_shutdown([this]() {
         resetMaxon();
@@ -90,15 +105,6 @@ void StateController::maxon_activation(){
         //usleep(5000);
         RCLCPP_INFO(this->get_logger(), "maxon in op mode");
 
-        frame.can_id = 0x205;
-        frame.data[0]=0x06;
-        frame.data[1]=0x00;
-	    //for (int i=0; i<10;i++){
-            send_can_frame(frame);
-        // }
-        usleep(5000);
-        RCLCPP_INFO(this->get_logger(), "sent 0x06 to 0x205");
-
         frame.can_id = 0x305;
         frame.can_dlc = 8;
         int velocity = 6000; //set the velocity to 0
@@ -112,6 +118,17 @@ void StateController::maxon_activation(){
         }
         send_can_frame(frame);
 
+        
+        frame.can_id = 0x205;
+        frame.data[0]=0x06;
+        frame.data[1]=0x00;
+	    //for (int i=0; i<10;i++){
+            send_can_frame(frame);
+            // }
+            usleep(5000);
+            RCLCPP_INFO(this->get_logger(), "sent 0x06 to 0x205");
+
+            
         frame.data[0]=0x0F;
         frame.data[1]=0x00;
         //for (int i=0; i<10;i++){
@@ -159,9 +176,9 @@ void StateController::sendPosToMaxon(float angle){
 
     long raw_pos= RAD_ST_TO_MAXON_POS_WITH_RATIO(angle,ratio);
 
-    if(mission == lart_msgs::msg::Mission::INSPECTION){
+    if(this->mission.data == lart_msgs::msg::Mission::INSPECTION){
         //in inspection mode, the maxon is not activated, so the position is set to 0
-        long raw_pos= RAD_ST_ANGLE_TO_ACTUATOR_POS(angle);
+        raw_pos= RAD_ST_ANGLE_TO_ACTUATOR_POS(angle);
     }
 
     if(raw_pos>MAX_ACTUATOR_POS || raw_pos<-MAX_ACTUATOR_POS){
@@ -223,18 +240,26 @@ void StateController::spacCallback(const lart_msgs::msg::DynamicsCMD::SharedPtr 
 
 void StateController::missionFinishedCallback(const lart_msgs::msg::State::SharedPtr msg){
     //Handle mission finished callback from mission controller
-    if (msg->data == lart_msgs::msg::State::FINISH){
-        this->mission_finished = true;
-        if(current_rpm == 0){
-            {
-                std::lock_guard<std::mutex> guard(this->state_mutex);
-                this->state_msg.data = lart_msgs::msg::State::FINISH;
-                // this->sendState();
-            }
-        }else{
-            this->setEmergency();
-        }
+    //print
+    RCLCPP_INFO(this->get_logger(), "Mission finished callback received with state: %d", msg->data);
+    {
+        std::lock_guard<std::mutex> guard(this->state_mutex);
+        this->state_msg.data = lart_msgs::msg::State::FINISH;
+    
     }
+    // if (msg->data == lart_msgs::msg::State::FINISH){
+        // this->mission_finished = true;
+
+
+        // if(current_rpm == 0){
+        //     {
+        //         std::lock_guard<std::mutex> guard(this->state_mutex);
+        //         this->state_msg.data = lart_msgs::msg::State::FINISH;
+        //     }
+        // }else{
+        //     this->setEmergency();
+        // }
+    // }
 }
 
 void StateController::emergencyCallback(const lart_msgs::msg::State::SharedPtr msg){
@@ -304,6 +329,23 @@ void StateController::handle_can_frame(struct can_frame frame){
             send_can_frame(frame);
             break;
 
+            /*NEW!!*/
+        // case 0x71:{
+        //     uint32_t status = frame.data[2];
+        //     if (status == 0 && this->state_msg.data == lart_msgs::msg::State::EMERGENCY){
+        //         // Handle the case when the state is driving and the status is 0
+        //         RCLCPP_INFO(this->get_logger(), "Received status 0 while in emergency state, setting to ready");
+        //         {
+        //             std::lock_guard<std::mutex> guard(this->state_mutex);
+        //             this->state_msg.data = lart_msgs::msg::State::OFF;
+        //         }
+        //         this->resetMaxon();
+        //     }
+        //     break;
+        // }
+        // probably not needed
+
+
         case CAN_TOJAL_SEND_RPM:{ //RPM from VCU to PC
             // Handle ACU RPM frame
             uint16_t rpm = MAP_DECODE_TOJAL_RPM(frame.data);
@@ -368,16 +410,17 @@ void StateController::handle_can_frame(struct can_frame frame){
     
             break;
 
-        //not being used
-        /*case PDO_TXTWO(NODE_ID_STEERING):
-            //maxon feedback
-            target_position = MAP_DECODE_PDO_TXTWO_MAXON_TARGET_POSITION(frame.data);
-            target_speed = MAP_DECODE_PDO_TXTWO_MAXON_TARGET_SPEED(frame.data);
-            // Handle maxon feedback
-            std::cout<<"target_position: "<<target_position<<std::endl;
-            std::cout<<"target_speed: "<<target_speed<<std::endl;
 
-            break;*/
+        case PDO_TXTWO(NODE_ID_STEERING):{
+            //first two bytes, little endian
+            uint16_t error_code_maxon= frame.data[1] << 8 | frame.data[0];
+            if(error_code_maxon != 0){
+                RCLCPP_ERROR(this->get_logger(), "Maxon error code: %d", error_code_maxon);
+                this->resetMaxon();
+                this->maxon_activation();
+            }
+            break;
+        }
         
         
         case 0x385:
@@ -385,13 +428,19 @@ void StateController::handle_can_frame(struct can_frame frame){
 	        //RCLCPP_INFO(this->get_logger(), "I AM HERE, id 385");
             statusword2 = MAP_DECODE_PDO_TXTHREE_MAXON_STATUSWORD(frame.data);
             actual_position = MAP_DECODE_PDO_TXTHREE_MAXON_ACTUAL_POSITION(frame.data);
-            maxon_activated = true;
             actual_moment = MAP_DECODE_PDO_TXTHREE_MAXON_ACTUAL_MOMENT(frame.data);
+            if (actual_position ==0){
+                // this->setEmergency();
+                // RCLCPP_ERROR(this->get_logger(), "Maxon position is 0, emergency state set");
+                // return;
+                break;
+            }
+
             if(!relative_zero_set){ //while the eletronics department does not have the steering wheel angle sensor, the relative zero is set to the first position of the maxon THE WHEELS MUST BE STRAIGHT
                 relative_maxon_zero = actual_position;
                 relative_zero_set = true;
             }
-
+            /* To test*/
             // if(!maxon_start_position_set){
             //     maxon_start_position = actual_position; //save the start position of the maxon
             //     maxon_start_position_set = true;
@@ -426,9 +475,6 @@ void StateController::handle_can_frame(struct can_frame frame){
                         std::lock_guard<std::mutex> guard(this->state_mutex);
                         this->state_msg.data = lart_msgs::msg::State::DRIVING;
                     }
-                    this->sendState();
-                    this->state_msg.data = lart_msgs::msg::State::DRIVING;
-                    this->state_publisher_->publish(this->state_msg);
                 }
             }
             if(res_response == 0x00){//received the res emergency signal
@@ -438,27 +484,46 @@ void StateController::handle_can_frame(struct can_frame frame){
             break;
         }  
 
-        case 0x512:
+        case 0x512:{
+
             // Handle ACU state frame
             // uint32_t status = MAP_DECODE_AS_STATE(frame.data);
             //this->mission.data = MAP_DECODE_AS_MISSION(frame.data); // save the mission
             //this->mission_publisher_->publish(this->mission); // send the mission to the mission controller
-
+            // std::cout << stateToString(this->state_msg.data) << std::endl;
             uint32_t status = frame.data[0];
-
-            if(status == lart_msgs::msg::State::READY && this->state_msg.data != lart_msgs::msg::State::READY){
-                
+            // std::cout<<status<<std::endl;
+            
+            if(status == lart_msgs::msg::State::READY && (this->state_msg.data != lart_msgs::msg::State::READY && this->state_msg.data != lart_msgs::msg::State::DRIVING)){
+                std::cout<<"State changed to READY"<<std::endl;
                 ready_change = std::chrono::steady_clock::now(); //save the time the state was changed to ready
                 {
                     std::lock_guard<std::mutex> guard(this->state_mutex);
                     this->state_msg.data = lart_msgs::msg::State::READY;
                 }
-                //this->sendState();
-                // this->maxon_activation(); //to be tested
-            }
+                
+                // std::cout<<this->maxon_activated<<std::endl;
 
+                // this->maxon_activation();
+                
+            }
+            /*NEW!!*/
+            if(status == lart_msgs::msg::State::OFF && this->state_msg.data == lart_msgs::msg::State::EMERGENCY){
+                std::cout<<"State changed to OFF"<<std::endl;
+                {
+                    std::lock_guard<std::mutex> guard(this->state_mutex);
+                    this->state_msg.data = lart_msgs::msg::State::OFF;
+                }
+                // this->resetMaxon();
+            }
             break;
- 
+        }
+        case 0x708:
+            if (frame.data[0]==0x05){
+                this->maxon_activated = true;
+            }
+            break;
+
     }
 }
 
@@ -483,6 +548,17 @@ void StateController::read_can_frame(){
 
 bool StateController::valid_state(lart_msgs::msg::State msg){
     return (msg.data == lart_msgs::msg::State::OFF || msg.data == lart_msgs::msg::State::READY || msg.data == lart_msgs::msg::State::DRIVING || msg.data == lart_msgs::msg::State::EMERGENCY || msg.data == lart_msgs::msg::State::FINISH);
+}
+
+std::string StateController::stateToString(int state) {
+    switch (state) {
+      case lart_msgs::msg::State::OFF: return "OFF";
+      case lart_msgs::msg::State::READY: return "READY";
+      case lart_msgs::msg::State::DRIVING: return "DRIVING";
+      case lart_msgs::msg::State::EMERGENCY: return "EMERGENCY";
+      case lart_msgs::msg::State::FINISH: return "FINISH";
+      default: return "UNKNOWN";
+    }
 }
 
 int main(int argc, char *argv[])
