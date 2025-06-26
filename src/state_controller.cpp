@@ -13,7 +13,7 @@ StateController::StateController() : Node("state_controller"){
     
     state_publisher_ = this->create_publisher<lart_msgs::msg::State>("/pc_origin/system_status/critical_as/state", 10);
 
-    mission_publisher_ = this->create_publisher<lart_msgs::msg::Mission>("/pc_origin/system_status/critical_as/mission", 10);
+    mission_publisher_ = this->create_publisher<lart_msgs::msg::Mission>("/acu_origin/system_status/critical_as/mission", 10);
 
     inspection_steering_angle_sub_ = this->create_subscription<lart_msgs::msg::DynamicsCMD>("/cmd", 10, std::bind(&StateController::inspectionSteeringAngleCallback, this, _1));
 
@@ -327,6 +327,8 @@ void StateController::handle_can_frame(struct can_frame frame){
         case 0x51://mission from ACU Id
             frame.can_id = 0x61; //Mission to ACU Id
             send_can_frame(frame);
+            this->mission.data =frame.data[0]; //save the mission
+            this->mission_publisher_->publish(this->mission); // send the mission to the mission controller
             break;
 
             /*NEW!!*/
