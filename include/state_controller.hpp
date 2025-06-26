@@ -45,6 +45,7 @@
 #define T24E_CAN_INTERFACE "can0"
 #define MAX_ACTUATOR_POS 492200 //assuming a maximum steering wheel angle of 105 degrees
 #define RES_CAN_ID 0x191
+#define DINAMICS_STEERING_ID 0x111 //id for the steering angle from SPAC
 
 
 //#define RES_READY_CAN_ID 0x0B//see real id
@@ -161,6 +162,8 @@ private:
   bool maxon_activated;
   uint16_t current_rpm = 0;//save the current speed
   lart_msgs::msg::Mission mission;//save the mission
+  long maxon_start_position;
+  bool maxon_start_position_set = false; // flag to check if the maxon start position is set
 
 
   //id 0x185

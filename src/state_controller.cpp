@@ -18,6 +18,8 @@ StateController::StateController() : Node("state_controller"){
     inspection_steering_angle_sub_ = this->create_subscription<lart_msgs::msg::DynamicsCMD>("/cmd", 10, std::bind(&StateController::inspectionSteeringAngleCallback, this, _1));
 
     state_msg.data = lart_msgs::msg::State::OFF; // initialize state as off
+
+    mission.data = lart_msgs::msg::Mission::MANUAL; // initialize mission as manual
     
     mission_finished = false;
 
@@ -120,6 +122,9 @@ void StateController::resetMaxon(){
 
 void StateController::inspectionSteeringAngleCallback(const lart_msgs::msg::DynamicsCMD::SharedPtr msg){//to test the maxon with the jetson
     // Handle inspection steering angle callback
+    if(this->state_msg.data != lart_msgs::msg::State::DRIVING){
+        return;
+    }
     float angle = msg->steering_angle;
     std::cout<<"angle: "<<angle<<std::endl;
     uint16_t rpm = msg->rpm;
@@ -177,6 +182,9 @@ void StateController::sendPosToMaxon(float angle){
 
 void StateController::spacCallback(const lart_msgs::msg::DynamicsCMD::SharedPtr msg){
     // Handle spac callback
+    if(this->state_msg.data != lart_msgs::msg::State::DRIVING){
+        return;
+    }
     uint8_t rpm_array[2];
     
     //send steering position to maxon
@@ -284,6 +292,34 @@ void StateController::handle_can_frame(struct can_frame frame){
             current_rpm = rpm; //save the current speed
             break;
         }
+        case DINAMICS_STEERING_ID:{ //To be tested
+            float angle = frame.data[1]>> 8 | frame.data[0]; // Combine the two bytes to get the angle
+            angle = (angle / 100.0) * LART_PI; // Convert to radians
+
+            if(!relative_zero_set){
+
+                relative_maxon_zero = maxon_start_position + RAD_ST_ANGLE_TO_ACTUATOR_POS(angle); //set the relative zero to the first position of the maxon when the system is turned on
+                relative_zero_set = true;
+
+                struct can_frame frame;
+                frame.can_id = 0x205;
+                frame.can_dlc = 2;
+                frame.data[0] = 0x0F;
+                frame.data[1] = 0x00;
+                this->send_can_frame(frame);
+
+                frame.can_id = 0x405;//pc to maxon position id
+                frame.can_dlc = 6;
+
+                frame.data[0] = 0x3F; //With 0x3F the maxon starts moving immediately to that position, does not wait to reach the previous position
+                frame.data[1] = 0x00;
+                for (int i = 0; i < 4; ++i) {
+                    frame.data[2 + i] = (relative_maxon_zero >> (8 * i)) & 0xFF; // Extract each byte
+                }
+                this->send_can_frame(frame);
+            }
+            break;
+        }
 
         case PDO_TXONE(NODE_ID_STEERING):
             //maxon feedback
@@ -334,6 +370,13 @@ void StateController::handle_can_frame(struct can_frame frame){
                 relative_maxon_zero = actual_position;
                 relative_zero_set = true;
             }
+
+            // if(!maxon_start_position_set){
+            //     maxon_start_position = actual_position; //save the start position of the maxon
+            //     maxon_start_position_set = true;
+            // } //For the steering wheel angle sensor, the maxon start position is the first position of the maxon when the system is turned on
+
+
             // Handle maxon feedback
             //std::cout<<"statusword: "<<statusword2<<std::endl;
             //RCLCPP_INFO(this->get_logger(), "actual_position: ", actual_position);
@@ -390,8 +433,9 @@ void StateController::handle_can_frame(struct can_frame frame){
                     this->state_msg.data = lart_msgs::msg::State::READY;
                 }
                 //this->sendState();
-
+                // this->maxon_activation(); //to be tested
             }
+
             break;
  
     }
