@@ -99,6 +99,18 @@ void StateController::maxon_activation(){
         usleep(5000);
         RCLCPP_INFO(this->get_logger(), "sent 0x06 to 0x205");
 
+        frame.can_id = 0x305;
+        frame.can_dlc = 8;
+        int velocity = 6000; //set the velocity to 0
+        int acceleration = 8000; //set the acceleration to 0
+        for (int i = 0; i < 4; ++i) {
+            frame.data[i] = (velocity >> (8 * i)) & 0xFF; // Extract each byte
+        }
+
+        for (int i = 0; i < 4; ++i) {
+            frame.data[4 + i] = (acceleration >> (8 * i)) & 0xFF; // Extract each byte
+        }
+        send_can_frame(frame);
 
         frame.data[0]=0x0F;
         frame.data[1]=0x00;
@@ -144,7 +156,14 @@ void StateController::sendPosToMaxon(float angle){
     float ratio = STEERING_ANGLE_TO_RATIO(angle);
 
     // long raw_pos= RAD_ST_ANGLE_TO_ACTUATOR_POS(angle);
+
     long raw_pos= RAD_ST_TO_MAXON_POS_WITH_RATIO(angle,ratio);
+
+    if(mission == lart_msgs::msg::Mission::INSPECTION){
+        //in inspection mode, the maxon is not activated, so the position is set to 0
+        long raw_pos= RAD_ST_ANGLE_TO_ACTUATOR_POS(angle);
+    }
+
     if(raw_pos>MAX_ACTUATOR_POS || raw_pos<-MAX_ACTUATOR_POS){
         RCLCPP_WARN(this->get_logger(), "Position out of range: %ld", raw_pos);
         raw_pos=MAX_ACTUATOR_POS;
@@ -152,11 +171,13 @@ void StateController::sendPosToMaxon(float angle){
     long pos = relative_maxon_zero + raw_pos;
     
     struct can_frame frame;
-    frame.can_id = 0x205;
-    frame.can_dlc = 2;
-    frame.data[0] = 0x0F;
-    frame.data[1] = 0x00;
-    this->send_can_frame(frame);
+    /* I dont think i need this*/
+
+    // frame.can_id = 0x205;
+    // frame.can_dlc = 2;
+    // frame.data[0] = 0x0F;
+    // frame.data[1] = 0x00;
+    // this->send_can_frame(frame);
 
     frame.can_id = 0x405;//pc to maxon position id
     frame.can_dlc = 6;
