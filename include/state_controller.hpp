@@ -43,7 +43,7 @@
 #include "lart_common.h"
 
 #define T24E_CAN_INTERFACE "can0"
-#define MAX_ACTUATOR_POS 492200 //assuming a maximum steering wheel angle of 105 degrees
+#define MAX_ACTUATOR_POS 492000//492200 //assuming a maximum steering wheel angle of 105 degrees
 #define RES_CAN_ID 0x191
 #define DINAMICS_STEERING_ID 0x111 //id for the steering angle from SPAC
 

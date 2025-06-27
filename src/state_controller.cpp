@@ -19,7 +19,7 @@ StateController::StateController() : Node("state_controller"){
 
     state_msg.data = lart_msgs::msg::State::OFF; // initialize state as off
 
-    mission.data = lart_msgs::msg::Mission::INSPECTION; // initialize mission as manual //CHANGE BACK TO MANUAL
+    mission.data = lart_msgs::msg::Mission::MANUAL; // initialize mission as manual //CHANGE BACK TO MANUAL
     
     mission_finished = false;
 
@@ -107,8 +107,8 @@ void StateController::maxon_activation(){
 
         frame.can_id = 0x305;
         frame.can_dlc = 8;
-        int velocity = 6000; //set the velocity to 0
-        int acceleration = 8000; //set the acceleration to 0
+        int velocity = 5000; //set the velocity to 0
+        int acceleration = 7000; //set the acceleration to 0
         for (int i = 0; i < 4; ++i) {
             frame.data[i] = (velocity >> (8 * i)) & 0xFF; // Extract each byte
         }
@@ -118,24 +118,32 @@ void StateController::maxon_activation(){
         }
         send_can_frame(frame);
 
-        
+        memset(frame.data, 0, 8); //set the velocity and acceleration to 0
+
+        int deceleration = 2000;
+
+        frame.can_dlc = 2;
         frame.can_id = 0x205;
         frame.data[0]=0x06;
         frame.data[1]=0x00;
+        // for (int i = 0; i < 4; ++i) {
+        //     frame.data[2 + i] = (deceleration >> (8 * i)) & 0xFF; // Extract each byte
+        // }
+
 	    //for (int i=0; i<10;i++){
             send_can_frame(frame);
             // }
-            usleep(5000);
-            RCLCPP_INFO(this->get_logger(), "sent 0x06 to 0x205");
+        usleep(5000);
+        RCLCPP_INFO(this->get_logger(), "sent 0x06 to 0x205");
 
-            
+        frame.can_dlc = 2;
         frame.data[0]=0x0F;
         frame.data[1]=0x00;
         //for (int i=0; i<10;i++){
             send_can_frame(frame);
         //}
         RCLCPP_INFO(this->get_logger(), "sent 0x0F to 0x205");
-        usleep(100000);
+        usleep(70000);
     }
      RCLCPP_INFO(this->get_logger(), "maxon activated");
 }
@@ -151,14 +159,14 @@ void StateController::resetMaxon(){
 
 void StateController::inspectionSteeringAngleCallback(const lart_msgs::msg::DynamicsCMD::SharedPtr msg){//to test the maxon with the jetson
     // Handle inspection steering angle callback
-    if(this->state_msg.data != lart_msgs::msg::State::DRIVING){
-        return;
-    }
+    // if(this->state_msg.data != lart_msgs::msg::State::DRIVING){
+    //     return;
+    // }
     float angle = msg->steering_angle;
     std::cout<<"angle: "<<angle<<std::endl;
     uint16_t rpm = msg->rpm;
 
-    sendPosToMaxon(angle);
+    sendPosToMaxon(msg->steering_angle);
     uint8_t rpm_array[2];
     struct can_frame frame;
     frame.can_id = CAN_TOJAL_TEST;//to be defined
@@ -169,16 +177,19 @@ void StateController::inspectionSteeringAngleCallback(const lart_msgs::msg::Dyna
 }
 
 void StateController::sendPosToMaxon(float angle){
+    // std::cout<<"Sending position to maxon: "<<angle<<std::endl;
     //receives the angle and calculates the position with the offset
     float ratio = STEERING_ANGLE_TO_RATIO(angle);
 
     // long raw_pos= RAD_ST_ANGLE_TO_ACTUATOR_POS(angle);
 
-    long raw_pos= RAD_ST_TO_MAXON_POS_WITH_RATIO(angle,ratio);
+    long raw_pos;
 
     if(this->mission.data == lart_msgs::msg::Mission::INSPECTION){
-        //in inspection mode, the maxon is not activated, so the position is set to 0
         raw_pos= RAD_ST_ANGLE_TO_ACTUATOR_POS(angle);
+        RCLCPP_INFO(this->get_logger(), "Using inspection mission, raw_pos: %ld", raw_pos);
+    }else{
+        raw_pos= RAD_ST_TO_MAXON_POS_WITH_RATIO(angle,ratio);
     }
 
     if(raw_pos>MAX_ACTUATOR_POS || raw_pos<-MAX_ACTUATOR_POS){
@@ -188,13 +199,13 @@ void StateController::sendPosToMaxon(float angle){
     long pos = relative_maxon_zero + raw_pos;
     
     struct can_frame frame;
-    /* I dont think i need this*/
 
-    // frame.can_id = 0x205;
-    // frame.can_dlc = 2;
-    // frame.data[0] = 0x0F;
-    // frame.data[1] = 0x00;
-    // this->send_can_frame(frame);
+    frame.can_id = 0x205;
+    frame.can_dlc = 2;
+    frame.data[0] = 0x0F;
+    frame.data[1] = 0x00;
+    this->send_can_frame(frame);
+    usleep(1300);
 
     frame.can_id = 0x405;//pc to maxon position id
     frame.can_dlc = 6;
@@ -328,7 +339,6 @@ void StateController::handle_can_frame(struct can_frame frame){
             frame.can_id = 0x61; //Mission to ACU Id
             send_can_frame(frame);
             this->mission.data =frame.data[0]; //save the mission
-            this->mission_publisher_->publish(this->mission); // send the mission to the mission controller
             break;
 
             /*NEW!!*/
@@ -353,6 +363,10 @@ void StateController::handle_can_frame(struct can_frame frame){
             uint16_t rpm = MAP_DECODE_TOJAL_RPM(frame.data);
             lart_msgs::msg::Dynamics spac_msg;
             spac_msg.rpm = rpm;
+            // if(rpm < 0 || rpm > 6000){
+            //     RCLCPP_WARN(this->get_logger(), "RPM out of range: %d", rpm);
+            //     return;
+            // }
             spac_publisher->publish(spac_msg);
             current_rpm = rpm; //save the current speed
             break;
@@ -363,7 +377,7 @@ void StateController::handle_can_frame(struct can_frame frame){
 
             if(!relative_zero_set){
 
-                relative_maxon_zero = maxon_start_position + RAD_ST_ANGLE_TO_ACTUATOR_POS(angle); //set the relative zero to the first position of the maxon when the system is turned on
+                relative_maxon_zero = maxon_start_position + RAD_ST_ANGLE_TO_ACTUATOR_POS(-angle); //set the relative zero to the first position of the maxon when the system is turned on
                 relative_zero_set = true;
 
                 struct can_frame frame;
@@ -507,7 +521,7 @@ void StateController::handle_can_frame(struct can_frame frame){
                 // std::cout<<this->maxon_activated<<std::endl;
 
                 // this->maxon_activation();
-                
+                this->mission_publisher_->publish(this->mission); // send the mission to the mission controller
             }
             /*NEW!!*/
             if(status == lart_msgs::msg::State::OFF && this->state_msg.data == lart_msgs::msg::State::EMERGENCY){
