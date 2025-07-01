@@ -361,12 +361,13 @@ void StateController::handle_can_frame(struct can_frame frame){
         case CAN_TOJAL_SEND_RPM:{ //RPM from VCU to PC
             // Handle ACU RPM frame
             uint16_t rpm = MAP_DECODE_TOJAL_RPM(frame.data);
+            if (rpm >5000){
+                rpm = this->last_valid_rpm;
+            }else {
+                this->last_valid_rpm = rpm; // save the last valid rpm
+            }
             lart_msgs::msg::Dynamics spac_msg;
             spac_msg.rpm = rpm;
-            // if(rpm < 0 || rpm > 6000){
-            //     RCLCPP_WARN(this->get_logger(), "RPM out of range: %d", rpm);
-            //     return;
-            // }
             spac_publisher->publish(spac_msg);
             current_rpm = rpm; //save the current speed
             break;

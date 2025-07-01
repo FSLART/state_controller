@@ -164,7 +164,7 @@ private:
   lart_msgs::msg::Mission mission;//save the mission
   long maxon_start_position;
   bool maxon_start_position_set = false; // flag to check if the maxon start position is set
-
+  uint16_t last_valid_rpm = 0; // last valid rpm received from spac
 
   //id 0x185
   uint32_t statusword1;
