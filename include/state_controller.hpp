@@ -6,6 +6,7 @@
  * 
  */
 #ifndef STATE_CONTROLLER_HPP
+
 #define STATE_CONTROLLER_HPP
 #define __LART_AXANATO_VCU_GATEWAY__
 
@@ -27,6 +28,8 @@
 #include <unistd.h> 
 #include <array>
 #include <stdlib.h>
+#include <boost/process.hpp>
+#include <ctime>
 
 #include "rclcpp/rclcpp.hpp"
 #include "std_msgs/msg/bool.hpp"
@@ -47,8 +50,11 @@
 #define RES_CAN_ID 0x191
 #define DINAMICS_STEERING_ID 0x111 //id for the steering angle from SPAC
 
+#define RECORD_BAG "ros2 bag record -s mcap -o "
+#define BAG_DIRECTORY "/home/lart-tasha/Documents/bags/"
+#define BAG_TOPICS "/acu_origin/dynamics /mapping/cones /mapping/cones_markers /pc_origin/dynamics /pc_origin/system_status/critical_as/mission /pc_origin/system_status/critical_as/state /planned_path_topic /rviz_path_topic /target_marker_topic /zed/depth/camera_info /zed/left/camera_info /imu/angular_velocity /zed/left/image_raw /zed/depth/image_raw /ekf/state"
 
-//#define RES_READY_CAN_ID 0x0B//see real id
+namespace bp = boost::process;
 
 class StateController : public rclcpp::Node{
 public:
@@ -149,6 +155,8 @@ private:
   
   std::string stateToString(int state);
 
+  void startRecordBagProcess();
+
   // class variables
   int s=-1;//socket descriptor
 
@@ -165,6 +173,9 @@ private:
   long maxon_start_position;
   bool maxon_start_position_set = false; // flag to check if the maxon start position is set
   uint16_t last_valid_rpm = 0; // last valid rpm received from spac
+  bool bag_recording = false; // flag to check if the bag is being recorded
+  int bag_process;
+  boost::process::child bag_process_; // Member variable to store the process
 
   //id 0x185
   uint32_t statusword1;

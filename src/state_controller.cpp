@@ -258,6 +258,10 @@ void StateController::missionFinishedCallback(const lart_msgs::msg::State::Share
         this->state_msg.data = lart_msgs::msg::State::FINISH;
     
     }
+    if (this->bag_recording){
+        this->bag_process_.terminate(); // Terminate the bag recording process
+        this->bag_recording = false; // Reset the bag recording flag
+    }
     // if (msg->data == lart_msgs::msg::State::FINISH){
         // this->mission_finished = true;
 
@@ -361,11 +365,11 @@ void StateController::handle_can_frame(struct can_frame frame){
         case CAN_TOJAL_SEND_RPM:{ //RPM from VCU to PC
             // Handle ACU RPM frame
             uint16_t rpm = MAP_DECODE_TOJAL_RPM(frame.data);
-            if (rpm >5000){
-                rpm = this->last_valid_rpm;
-            }else {
-                this->last_valid_rpm = rpm; // save the last valid rpm
-            }
+            // if (rpm >5000){
+            //     rpm = this->last_valid_rpm;
+            // }else {
+            //     this->last_valid_rpm = rpm; // save the last valid rpm
+            // }
             lart_msgs::msg::Dynamics spac_msg;
             spac_msg.rpm = rpm;
             spac_publisher->publish(spac_msg);
@@ -496,6 +500,10 @@ void StateController::handle_can_frame(struct can_frame frame){
             }
             if(res_response == 0x00){//received the res emergency signal
                 this->setEmergency();
+                if (this->bag_recording){
+                    this->bag_process_.terminate(); // Terminate the bag recording process
+                    this->bag_recording = false; // Reset the bag recording flag
+                }
                 //resetMaxon();
             }
             break;
@@ -520,8 +528,11 @@ void StateController::handle_can_frame(struct can_frame frame){
                 }
                 
                 // std::cout<<this->maxon_activated<<std::endl;
-
+                
                 // this->maxon_activation();
+                // if(!this->bag_recording)
+                //     this->startRecordBagProcess(); // Start the bag recording process
+
                 this->mission_publisher_->publish(this->mission); // send the mission to the mission controller
             }
             /*NEW!!*/
@@ -565,6 +576,31 @@ void StateController::read_can_frame(){
 
 bool StateController::valid_state(lart_msgs::msg::State msg){
     return (msg.data == lart_msgs::msg::State::OFF || msg.data == lart_msgs::msg::State::READY || msg.data == lart_msgs::msg::State::DRIVING || msg.data == lart_msgs::msg::State::EMERGENCY || msg.data == lart_msgs::msg::State::FINISH);
+}
+
+
+void StateController::startRecordBagProcess() {
+    try {
+        // Get the current date
+        auto t = std::time(nullptr);
+        auto tm = *std::localtime(&t);
+
+        std::ostringstream bag_command;
+        bag_command << RECORD_BAG << BAG_DIRECTORY 
+            <<"bags_" << std::setw(2) << std::setfill('0') << tm.tm_mday 
+            << "_" << std::setw(2) << std::setfill('0') << tm.tm_mon + 1 
+            <<"/bag_"<< std::setw(2) << std::setfill('0') << tm.tm_hour << "_"
+            << std::setw(2) << std::setfill('0') << tm.tm_min << "_"
+            << std::setw(2) << std::setfill('0') << tm.tm_sec  << " " 
+            << BAG_TOPICS;
+
+        // Start the process using Boost.Process
+        this->bag_process_ = bp::child(bag_command.str());
+
+        this->bag_recording = true; // Set the flag to true when the process starts
+    } catch (const std::exception &e) {
+        std::cerr << "Failed to start process: " << e.what() << std::endl;
+    }
 }
 
 std::string StateController::stateToString(int state) {
