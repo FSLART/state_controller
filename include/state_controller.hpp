@@ -30,6 +30,7 @@
 #include <stdlib.h>
 #include <boost/process.hpp>
 #include <ctime>
+#include <signal.h>
 
 #include "rclcpp/rclcpp.hpp"
 #include "std_msgs/msg/bool.hpp"

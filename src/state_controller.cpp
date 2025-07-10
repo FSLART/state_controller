@@ -56,7 +56,7 @@ StateController::StateController() : Node("state_controller"){
     std::thread send_can_thread(&StateController::send_can_frames, this);
     send_can_thread.detach();
 
-    maxon_activation();
+    // maxon_activation();
     
     //initialize CAN open for res and maxon 
     /*NEW!!*/
@@ -259,7 +259,7 @@ void StateController::missionFinishedCallback(const lart_msgs::msg::State::Share
     
     }
     if (this->bag_recording){
-        this->bag_process_.terminate(); // Terminate the bag recording process
+        ::kill(this->bag_process_.id(), SIGINT);// Terminate the bag recording process
         this->bag_recording = false; // Reset the bag recording flag
     }
     // if (msg->data == lart_msgs::msg::State::FINISH){
@@ -281,6 +281,8 @@ void StateController::emergencyCallback(const lart_msgs::msg::State::SharedPtr m
     //handle emergency from pc pipeline
     if (msg->data == lart_msgs::msg::State::EMERGENCY){
         this->setEmergency();
+        ::kill(this->bag_process_.id(), SIGINT);
+        this->bag_recording = false; // Reset the bag recording flag
     }
 }
 
@@ -501,7 +503,7 @@ void StateController::handle_can_frame(struct can_frame frame){
             if(res_response == 0x00){//received the res emergency signal
                 this->setEmergency();
                 if (this->bag_recording){
-                    this->bag_process_.terminate(); // Terminate the bag recording process
+                    ::kill(this->bag_process_.id(), SIGINT); // Terminate the bag recording process
                     this->bag_recording = false; // Reset the bag recording flag
                 }
                 //resetMaxon();
@@ -530,8 +532,9 @@ void StateController::handle_can_frame(struct can_frame frame){
                 // std::cout<<this->maxon_activated<<std::endl;
                 
                 // this->maxon_activation();
-                // if(!this->bag_recording)
-                //     this->startRecordBagProcess(); // Start the bag recording process
+
+                if(!this->bag_recording)
+                    this->startRecordBagProcess(); // Start the bag recording process
 
                 this->mission_publisher_->publish(this->mission); // send the mission to the mission controller
             }
