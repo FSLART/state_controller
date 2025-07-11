@@ -53,7 +53,7 @@
 
 #define RECORD_BAG "ros2 bag record -s mcap -o "
 #define BAG_DIRECTORY "/home/lart-tasha/Documents/bags/"
-#define BAG_TOPICS "/acu_origin/dynamics /mapping/cones /mapping/cones_markers /pc_origin/dynamics /pc_origin/system_status/critical_as/mission /pc_origin/system_status/critical_as/state /planned_path_topic /rviz_path_topic /target_marker_topic /zed/depth/camera_info /zed/left/camera_info /imu/angular_velocity /zed/left/image_raw /zed/depth/image_raw /ekf/state"
+#define BAG_TOPICS "/acu_origin/dynamics /mapping/cones /mapping/cones_markers /pc_origin/dynamics /pc_origin/system_status/critical_as/mission /pc_origin/system_status/critical_as/state /planned_path_topic /rviz_path_topic /target_marker_topic /zed/depth/camera_info /zed/left/camera_info /imu/angular_velocity /zed/left/image_raw/compressed /zed/depth/image_raw /ekf/state"
 
 namespace bp = boost::process;
 

@@ -60,20 +60,24 @@ StateController::StateController() : Node("state_controller"){
     
     //initialize CAN open for res and maxon 
     /*NEW!!*/
-    // struct can_frame frame;
+    struct can_frame frame;
 
-    // frame.can_dlc = 2;
+    frame.can_dlc = 2;
 
-    // frame.can_id = 0x00;//id for initialization
-    // frame.data[0] = 0x00; 
-    // frame.data[1] = 0x00; //activate maxon and RES
-    // send_can_frame(frame);
+    frame.can_id = 0x00;//id for initialization
+    frame.data[0] = 0x00; 
+    frame.data[1] = 0x00; //activate maxon and RES
+    send_can_frame(frame);
 
-    // frame.data[0]=0x01;//op mode
-    // frame.data[1]=0x00;
-    // send_can_frame(frame);
+    frame.data[0]=0x01;//op mode
+    frame.data[1]=0x00;
+    send_can_frame(frame);
 
     rclcpp::on_shutdown([this]() {
+        if (this->bag_recording){
+            ::kill(this->bag_process_.id(), SIGINT); // Terminate the bag recording process
+            this->bag_recording = false; // Reset the bag recording flag
+        }
         resetMaxon();
     });
 }
