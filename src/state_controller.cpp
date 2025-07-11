@@ -535,10 +535,10 @@ void StateController::handle_can_frame(struct can_frame frame){
                 
                 // std::cout<<this->maxon_activated<<std::endl;
                 
-                this->maxon_activation();
+                // this->maxon_activation();
 
                 if(!this->bag_recording)
-                    this->startRecordBagProcess(); // Start the bag recording process
+                   this->startRecordBagProcess(); // Start the bag recording process
 
                 this->mission_publisher_->publish(this->mission); // send the mission to the mission controller
             }
@@ -602,7 +602,7 @@ void StateController::startRecordBagProcess() {
             << BAG_TOPICS;
 
         // Start the process using Boost.Process
-        this->bag_process_ = bp::child(bag_command.str());
+        this->bag_process_ = bp::child("/bin/bash",  "-c" ,bag_command.str());
 
         this->bag_recording = true; // Set the flag to true when the process starts
     } catch (const std::exception &e) {
