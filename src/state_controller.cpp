@@ -531,7 +531,7 @@ void StateController::handle_can_frame(struct can_frame frame){
                 
                 // std::cout<<this->maxon_activated<<std::endl;
                 
-                // this->maxon_activation();
+                this->maxon_activation();
 
                 if(!this->bag_recording)
                     this->startRecordBagProcess(); // Start the bag recording process
