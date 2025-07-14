@@ -50,28 +50,28 @@ StateController::StateController() : Node("state_controller"){
     }
 
     // create a thread to read CAN frames
-   std::thread read_can_thread(&StateController::read_can_frame, this);
-   read_can_thread.detach();
+    std::thread read_can_thread(&StateController::read_can_frame, this);
+    read_can_thread.detach();
 
     std::thread send_can_thread(&StateController::send_can_frames, this);
     send_can_thread.detach();
 
-    // maxon_activation();
+    maxon_activation();
     
     //initialize CAN open for res and maxon 
     /*NEW!!*/
-    struct can_frame frame;
+    // struct can_frame frame;
 
-    frame.can_dlc = 2;
+    // frame.can_dlc = 2;
 
-    frame.can_id = 0x00;//id for initialization
-    frame.data[0] = 0x00; 
-    frame.data[1] = 0x00; //activate maxon and RES
-    send_can_frame(frame);
+    // frame.can_id = 0x00;//id for initialization
+    // frame.data[0] = 0x00; 
+    // frame.data[1] = 0x00; //activate maxon and RES
+    // send_can_frame(frame);
 
-    frame.data[0]=0x01;//op mode
-    frame.data[1]=0x00;
-    send_can_frame(frame);
+    // frame.data[0]=0x01;//op mode
+    // frame.data[1]=0x00;
+    // send_can_frame(frame);
 
     rclcpp::on_shutdown([this]() {
         if (this->bag_recording){
@@ -162,10 +162,6 @@ void StateController::resetMaxon(){
 }
 
 void StateController::inspectionSteeringAngleCallback(const lart_msgs::msg::DynamicsCMD::SharedPtr msg){//to test the maxon with the jetson
-    // Handle inspection steering angle callback
-    // if(this->state_msg.data != lart_msgs::msg::State::DRIVING){
-    //     return;
-    // }
     float angle = msg->steering_angle;
     std::cout<<"angle: "<<angle<<std::endl;
     uint16_t rpm = msg->rpm;
