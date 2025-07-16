@@ -125,6 +125,7 @@ void StateController::maxon_activation(){
         memset(frame.data, 0, 8); //set the velocity and acceleration to 0
 
         int deceleration = 2000;
+        (void) deceleration;
 
         frame.can_dlc = 2;
         frame.can_id = 0x205;
@@ -163,7 +164,7 @@ void StateController::resetMaxon(){
 
 void StateController::inspectionSteeringAngleCallback(const lart_msgs::msg::DynamicsCMD::SharedPtr msg){//to test the maxon with the jetson
     float angle = msg->steering_angle;
-    std::cout<<"angle: "<<angle<<std::endl;
+    RCLCPP_INFO(this->get_logger(), "Received steering angle: %f", angle);
     uint16_t rpm = msg->rpm;
 
     sendPosToMaxon(msg->steering_angle);
@@ -258,10 +259,13 @@ void StateController::missionFinishedCallback(const lart_msgs::msg::State::Share
         this->state_msg.data = lart_msgs::msg::State::FINISH;
     
     }
-    if (this->bag_recording){
-        ::kill(this->bag_process_.id(), SIGINT);// Terminate the bag recording process
-        this->bag_recording = false; // Reset the bag recording flag
-    }
+    std::thread([this]() {
+        std::this_thread::sleep_for(std::chrono::seconds(5));
+        if (this->bag_recording) {
+            ::kill(this->bag_process_.id(), SIGTERM);
+            this->bag_recording = false;
+        }
+    }).detach();
     // if (msg->data == lart_msgs::msg::State::FINISH){
         // this->mission_finished = true;
 
@@ -281,8 +285,13 @@ void StateController::emergencyCallback(const lart_msgs::msg::State::SharedPtr m
     //handle emergency from pc pipeline
     if (msg->data == lart_msgs::msg::State::EMERGENCY){
         this->setEmergency();
-        ::kill(this->bag_process_.id(), SIGINT);
-        this->bag_recording = false; // Reset the bag recording flag
+        std::thread([this]() {
+            std::this_thread::sleep_for(std::chrono::seconds(5));
+            if (this->bag_recording) {
+                ::kill(this->bag_process_.id(), SIGTERM);
+                this->bag_recording = false;
+            }
+        }).detach();
     }
 }
 
@@ -348,20 +357,16 @@ void StateController::handle_can_frame(struct can_frame frame){
             break;
 
             /*NEW!!*/
-        // case 0x71:{
-        //     uint32_t status = frame.data[2];
-        //     if (status == 0 && this->state_msg.data == lart_msgs::msg::State::EMERGENCY){
-        //         // Handle the case when the state is driving and the status is 0
-        //         RCLCPP_INFO(this->get_logger(), "Received status 0 while in emergency state, setting to ready");
-        //         {
-        //             std::lock_guard<std::mutex> guard(this->state_mutex);
-        //             this->state_msg.data = lart_msgs::msg::State::OFF;
-        //         }
-        //         this->resetMaxon();
-        //     }
-        //     break;
-        // }
-        // probably not needed
+        case 0x71:{
+            uint32_t ignition_status = frame.data[0];
+            if (ignition_status == 1 && !this->bag_recording){
+                //starting the bag when receiving the ignition
+
+                this->startRecordBagProcess();
+                //this->maxon_activation(); //To be tested
+            }
+            break;
+        }
 
 
         case CAN_TOJAL_SEND_RPM:{ //RPM from VCU to PC
@@ -502,10 +507,13 @@ void StateController::handle_can_frame(struct can_frame frame){
             }
             if(res_response == 0x00){//received the res emergency signal
                 this->setEmergency();
-                if (this->bag_recording){
-                    ::kill(this->bag_process_.id(), SIGINT); // Terminate the bag recording process
-                    this->bag_recording = false; // Reset the bag recording flag
-                }
+                std::thread([this]() {
+                    std::this_thread::sleep_for(std::chrono::seconds(5));
+                    if (this->bag_recording) {
+                        ::kill(this->bag_process_.id(), SIGTERM);
+                        this->bag_recording = false;
+                    }
+                }).detach();
                 //resetMaxon();
             }
             break;
@@ -522,7 +530,7 @@ void StateController::handle_can_frame(struct can_frame frame){
             // std::cout<<status<<std::endl;
             
             if(status == lart_msgs::msg::State::READY && (this->state_msg.data != lart_msgs::msg::State::READY && this->state_msg.data != lart_msgs::msg::State::DRIVING)){
-                std::cout<<"State changed to READY"<<std::endl;
+                RCLCPP_INFO(this->get_logger(), "State changed to READY");
                 ready_change = std::chrono::steady_clock::now(); //save the time the state was changed to ready
                 {
                     std::lock_guard<std::mutex> guard(this->state_mutex);
@@ -533,14 +541,12 @@ void StateController::handle_can_frame(struct can_frame frame){
                 
                 // this->maxon_activation();
 
-                if(!this->bag_recording)
-                   this->startRecordBagProcess(); // Start the bag recording process
-
                 this->mission_publisher_->publish(this->mission); // send the mission to the mission controller
+                 // Start the bag recording process
             }
             /*NEW!!*/
             if(status == lart_msgs::msg::State::OFF && this->state_msg.data == lart_msgs::msg::State::EMERGENCY){
-                std::cout<<"State changed to OFF"<<std::endl;
+                RCLCPP_INFO(this->get_logger(), "State changed to OFF");
                 {
                     std::lock_guard<std::mutex> guard(this->state_mutex);
                     this->state_msg.data = lart_msgs::msg::State::OFF;
