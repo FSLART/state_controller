@@ -36,12 +36,15 @@
 #include "std_msgs/msg/bool.hpp"
 #include "std_msgs/msg/string.hpp"
 #include "std_msgs/msg/float64.hpp"
+#include <geometry_msgs/msg/pose_stamped.hpp>
+#include <geometry_msgs/msg/vector3_stamped.hpp>
 
 #include "lart_msgs/msg/state.hpp"
 #include "lart_msgs/msg/mission.hpp"
 #include "lart_msgs/msg/as_status.hpp"
 #include "lart_msgs/msg/dynamics_cmd.hpp"
 #include "lart_msgs/msg/dynamics.hpp"
+#include "lart_msgs/msg/slam_stats.hpp"
 #include "./Can-Header-Map/CAN_asdb.h"
 #include "./Can-Header-Map/CANOPEN_db.h"
 #include "lart_common.h"
@@ -49,11 +52,18 @@
 #define T24E_CAN_INTERFACE "can0"
 #define MAX_ACTUATOR_POS 492000//492200 //assuming a maximum steering wheel angle of 105 degrees
 #define RES_CAN_ID 0x191
-#define DINAMICS_STEERING_ID 0x111 //id for the steering angle from SPAC
+
+#define DINAMICS_STEERING_ID 0x446 //id for the steering angle from SPAC
+#define DBC_MESSAGES 0x1234 //temporary
+#define DBC_IMU 0x501 //id for the imu data
+#define IMU_GPS_POSE 0x1235 //id for the imu gps pose
+#define IMU_TURN_RATE 0x1236 //id for the imu turn rate
+#define IMU_ACCELERATION 0x1237 //id for the imu acceleration
+
 
 #define RECORD_BAG "ros2 bag record -s mcap -o "
 #define BAG_DIRECTORY "/home/lart-tasha/Documents/bags/"
-#define BAG_TOPICS "/acu_origin/dynamics /mapping/cones /mapping/cones_markers /pc_origin/dynamics /pc_origin/system_status/critical_as/mission /pc_origin/system_status/critical_as/state /planned_path_topic /rviz_path_topic /target_marker_topic /zed/depth/camera_info /zed/left/camera_info /imu/angular_velocity /zed/left/image_raw/compressed /zed/depth/image_raw /ekf/state /gnss_pose /ekf/stats /ekf/map /ekf/cone_markers"
+#define BAG_TOPICS "/acu_origin/dynamics /mapping/cones /mapping/cones_markers /pc_origin/dynamics /pc_origin/system_status/critical_as/mission /pc_origin/system_status/critical_as/state /planned_path_topic /rviz_path_topic /target_marker_topic /zed/depth/camera_info /zed/left/camera_info /imu/angular_velocity /zed/left/image_raw/compressed /zed/depth/image_raw /ekf/state /gnss_pose /ekf/stats /ekf/map /ekf/cone_markers /tf /tf_static"
 
 namespace bp = boost::process;
 
@@ -141,7 +151,6 @@ private:
   /**
   * @brief This function uses a liner regression to get and aproximate steering ratio for given angle
   */
-  //float steeringRatio(float angle);
 
   /**
    * @brief This function sets the state to emergency
@@ -153,10 +162,18 @@ private:
    * @brief This function sends the current state 
    */
   void sendState();
+
+  /**
+   * @brief This function gets the current cone count, total of cones in the map and lap count from the ekf slam
+   * 
+   */
+  void ekfStatsCallback(const lart_msgs::msg::SlamStats::SharedPtr msg);
   
   std::string stateToString(int state);
 
   void startRecordBagProcess();
+
+  void sendImuCanMessages();
 
   // class variables
   int s=-1;//socket descriptor
@@ -196,9 +213,24 @@ private:
   uint32_t statusword3;
   uint32_t actual_speed;
   uint32_t actual_pwm_duty;
-
+  
   std::mutex state_mutex;
   std::mutex socket_mutex;
+
+
+  // dbc variables
+  float last_target_angle = 0.0f;
+  float last_actual_angle = 0.0f;
+  float last_target_speed = 0.0f;
+  float last_actual_speed = 0.0f;
+  uint16_t last_lap_count = 0;
+  uint16_t last_total_cone_count = 0;
+  uint16_t last_current_cone_count = 0;
+
+  float last_angular_velocity_z = 0.0f;
+  float last_acceleration_x = 0.0f;
+  float last_acceleration_y = 0.0f;
+
 
   // mission controller subscription
   rclcpp::Subscription<lart_msgs::msg::State>::SharedPtr mission_finished_sub_;
@@ -206,11 +238,17 @@ private:
   //spac subscription
   rclcpp::Subscription<lart_msgs::msg::DynamicsCMD>::SharedPtr spac_sub_;
 
-  //spac publisher
-  rclcpp::Publisher<lart_msgs::msg::Dynamics>::SharedPtr spac_publisher;
-
   // emergency stop subscription
   rclcpp::Subscription<lart_msgs::msg::State>::SharedPtr emergency_sub_;
+
+  // ekf stats subscriber
+  rclcpp::Subscription<lart_msgs::msg::SlamStats>::SharedPtr ekf_stats_sub_;
+
+  //inspection steering angle publisher
+  rclcpp::Subscription<lart_msgs::msg::DynamicsCMD>::SharedPtr inspection_steering_angle_sub_;
+
+  //spac publisher
+  rclcpp::Publisher<lart_msgs::msg::Dynamics>::SharedPtr spac_publisher;
 
   // state publisher to pc
   rclcpp::Publisher<lart_msgs::msg::State>::SharedPtr state_publisher_;
@@ -218,8 +256,11 @@ private:
   //mission_publisher
   rclcpp::Publisher<lart_msgs::msg::Mission>::SharedPtr mission_publisher_;
 
-  //inspection steering angle publisher
-  rclcpp::Subscription<lart_msgs::msg::DynamicsCMD>::SharedPtr inspection_steering_angle_sub_;
+  // imu gps pose publisher
+  rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr imu_gps_pose_publisher_;
+
+  rclcpp::Publisher<geometry_msgs::msg::Vector3Stamped>::SharedPtr imu_turn_rate_publisher_;
+
 };
 
 #endif
