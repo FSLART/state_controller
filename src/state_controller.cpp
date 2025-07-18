@@ -422,11 +422,15 @@ void StateController::handle_can_frame(struct can_frame frame){
             if (ignition_status == 1 && !this->bag_recording){
                 //starting the bag when receiving the ignition
 
+                if (!this->relative_zero_set){
+                    this->relative_maxon_zero = this->maxon_start_position; //set the relative zero to the initial position in case no message from the dynamics was received until ignition
+                    this->relative_zero_set = true;
+                }
+
                 this->startRecordBagProcess();
                 //this->maxon_activation(); //To be tested
 
                 this->mission_publisher_->publish(this->mission); // send the mission to the mission controller
-
             }
             break;
         }
@@ -526,7 +530,7 @@ void StateController::handle_can_frame(struct can_frame frame){
         case DINAMICS_STEERING_ID:{ //To be tested
             float angle = frame.data[1]>> 8 | frame.data[0]; // Combine the two bytes to get the angle
             this->last_actual_angle = angle; //save the last actual angle
-            angle = (angle / 100.0) * LART_PI; // Convert to radians
+            angle = DEG_TO_RAD(angle); // Convert to radians
 
             if(!relative_zero_set){
 
