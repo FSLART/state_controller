@@ -338,17 +338,17 @@ void StateController::setEmergency(){
         std::lock_guard<std::mutex> guard(this->state_mutex);
         this->state_msg.data = lart_msgs::msg::State::EMERGENCY;
     }
-    state_publisher_->publish(this->state_msg);
-    struct can_frame frame;
-    frame.can_id = CAN_AS_STATUS;
-    frame.can_dlc = 1;
-    memset(frame.data, 0, frame.can_dlc);
-    {
-        std::lock_guard<std::mutex> guard(this->state_mutex);
-        // MAP_ENCODE_AS_STATE(frame.data, this->state_msg.data);
-        frame.data[0]=this->state_msg.data;
-        this->send_can_frame(frame);
-    }
+    // state_publisher_->publish(this->state_msg);
+    // struct can_frame frame;
+    // frame.can_id = CAN_AS_STATUS;
+    // frame.can_dlc = 1;
+    // memset(frame.data, 0, frame.can_dlc);
+    // {
+    //     std::lock_guard<std::mutex> guard(this->state_mutex);
+    //     // MAP_ENCODE_AS_STATE(frame.data, this->state_msg.data);
+    //     frame.data[0]=this->state_msg.data;
+    //     this->send_can_frame(frame);
+    // }
 }
 
 // Send frame with state every 200ms
@@ -380,13 +380,11 @@ void StateController::sendImuCanMessages(){
 
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
-
-    
 }
 
 void StateController::sendState(){
     struct can_frame frame;
-    frame.can_id = CAN_AS_STATUS;
+    frame.can_id = 0x503;
     frame.can_dlc = 1;
     memset(frame.data, 0, frame.can_dlc);
     {
@@ -435,81 +433,81 @@ void StateController::handle_can_frame(struct can_frame frame){
             break;
         }
 
-        case IMU_TURN_RATE:{
-            // ----- Decode gyrX -----
-            int16_t raw_gyrX = (int16_t)((frame.data[0] << 8) | frame.data[1]);
-            double gyrX = raw_gyrX * 0.001953125;
+        // case IMU_TURN_RATE:{
+        //     // ----- Decode gyrX -----
+        //     int16_t raw_gyrX = (int16_t)((frame.data[0] << 8) | frame.data[1]);
+        //     double gyrX = raw_gyrX * 0.001953125;
 
-            // ----- Decode gyrY -----
-            int16_t raw_gyrY = (int16_t)((frame.data[2] << 8) | frame.data[3]);
-            double gyrY = raw_gyrY * 0.001953125;
+        //     // ----- Decode gyrY -----
+        //     int16_t raw_gyrY = (int16_t)((frame.data[2] << 8) | frame.data[3]);
+        //     double gyrY = raw_gyrY * 0.001953125;
 
-            // ----- Decode gyrZ -----
-            int16_t raw_gyrZ = (int16_t)((frame.data[4] << 8) | frame.data[5]);
-            double gyrZ = raw_gyrZ * 0.001953125;
+        //     // ----- Decode gyrZ -----
+        //     int16_t raw_gyrZ = (int16_t)((frame.data[4] << 8) | frame.data[5]);
+        //     double gyrZ = raw_gyrZ * 0.001953125;
 
-            this->last_angular_velocity_z = gyrZ * 57.295779513082; // Save the last angular velocity for later use
+        //     this->last_angular_velocity_z = gyrZ * 57.295779513082; // Save the last angular velocity for later use
 
-            geometry_msgs::msg::Vector3Stamped msg;
-            msg.header.stamp = this->get_clock()->now();
-            msg.header.frame_id = "base_footprint";
-            msg.vector.x = gyrX;
-            msg.vector.y = gyrY;
-            msg.vector.z = gyrZ;
+        //     geometry_msgs::msg::Vector3Stamped msg;
+        //     msg.header.stamp = this->get_clock()->now();
+        //     msg.header.frame_id = "base_footprint";
+        //     msg.vector.x = gyrX;
+        //     msg.vector.y = gyrY;
+        //     msg.vector.z = gyrZ;
 
-            RCLCPP_WARN(this->get_logger(), "IMU Turn Rate - X: %f, Y: %f, Z: %f", gyrX, gyrY, gyrZ);
-            this->imu_turn_rate_publisher_->publish(msg);
-            break;
-        }
+        //     RCLCPP_WARN(this->get_logger(), "IMU Turn Rate - X: %f, Y: %f, Z: %f", gyrX, gyrY, gyrZ);
+        //     this->imu_turn_rate_publisher_->publish(msg);
+        //     break;
+        // }
 
-        case IMU_ACCELERATION:{
-             // -------- Decode accX --------
-            int16_t raw_accX = (int16_t)((frame.data[0] << 8) | frame.data[1]); // Big endian
-            double accX = raw_accX * 0.00390625;
+        // case IMU_ACCELERATION:{
+        //      // -------- Decode accX --------
+        //     int16_t raw_accX = (int16_t)((frame.data[0] << 8) | frame.data[1]); // Big endian
+        //     double accX = raw_accX * 0.00390625;
 
-            this->last_acceleration_x = accX; // Save the last acceleration for later use
+        //     this->last_acceleration_x = accX; // Save the last acceleration for later use
 
-            // -------- Decode accY --------
-            int16_t raw_accY = (int16_t)((frame.data[2] << 8) | frame.data[3]);
-            double accY = raw_accY * 0.00390625;
+        //     // -------- Decode accY --------
+        //     int16_t raw_accY = (int16_t)((frame.data[2] << 8) | frame.data[3]);
+        //     double accY = raw_accY * 0.00390625;
 
-            this->last_acceleration_y = accY; // Save the last acceleration for later use
+        //     this->last_acceleration_y = accY; // Save the last acceleration for later use
 
-            // -------- Decode accZ --------
-            int16_t raw_accZ = (int16_t)((frame.data[4] << 8) | frame.data[5]);
-            double accZ = raw_accZ * 0.00390625;
+        //     // -------- Decode accZ --------
+        //     int16_t raw_accZ = (int16_t)((frame.data[4] << 8) | frame.data[5]);
+        //     double accZ = raw_accZ * 0.00390625;
 
             
 
-            break;
-        }
+        //     break;
+        // }
 
-        case IMU_GPS_POSE:{
-            float raw_lat =(frame.data[0] << 24) | (frame.data[1] << 16) | (frame.data[2] << 8) | frame.data[3];
+        // case IMU_GPS_POSE:{
+        //     float raw_lat =(frame.data[0] << 24) | (frame.data[1] << 16) | (frame.data[2] << 8) | frame.data[3];
 
-            float raw_lon = (frame.data[4] << 24) | (frame.data[5] << 16) | (frame.data[6] << 8) | frame.data[7];
+        //     float raw_lon = (frame.data[4] << 24) | (frame.data[5] << 16) | (frame.data[6] << 8) | frame.data[7];
         
-            geometry_msgs::msg::PoseStamped msg;
+        //     geometry_msgs::msg::PoseStamped msg;
 
-            msg.header.stamp = this->get_clock()->now();
-            msg.header.frame_id = "base_footprint";
+        //     msg.header.stamp = this->get_clock()->now();
+        //     msg.header.frame_id = "base_footprint";
 
-            // publishing Lat/Long/Altitude as x,y z
-            msg.pose.position.x = raw_lat * 5.9604644775e-08;
-            msg.pose.position.y = raw_lon *  1.1920928955e-07;
-            msg.pose.position.z = 0.0;
-            // publishing Orientation as w,x,y,z
-            msg.pose.orientation.w = 1.0;
-            msg.pose.orientation.x = 0.0;
-            msg.pose.orientation.y = 0.0;
-            msg.pose.orientation.z = 0.0;
+        //     // publishing Lat/Long/Altitude as x,y z
+        //     msg.pose.position.x = raw_lat * 5.9604644775e-08;
+        //     msg.pose.position.y = raw_lon *  1.1920928955e-07;
+        //     msg.pose.position.z = 0.0;
+        //     // publishing Orientation as w,x,y,z
+        //     msg.pose.orientation.w = 1.0;
+        //     msg.pose.orientation.x = 0.0;
+        //     msg.pose.orientation.y = 0.0;
+        //     msg.pose.orientation.z = 0.0;
 
-            RCLCPP_WARN(this->get_logger(), "IMU GPS Pose - Lat: %f, Lon: %f", msg.pose.position.x, msg.pose.position.y);
+        //     RCLCPP_WARN(this->get_logger(), "IMU GPS Pose - Lat: %f, Lon: %f", msg.pose.position.x, msg.pose.position.y);
 
-            this->imu_gps_pose_publisher_->publish(msg);
+        //     this->imu_gps_pose_publisher_->publish(msg);
 
-            break;
-        }
+        //     break;
+        // }
 
 
         case CAN_TOJAL_SEND_RPM:{ //RPM from VCU to PC
@@ -528,31 +526,44 @@ void StateController::handle_can_frame(struct can_frame frame){
             break;
         }
         case DINAMICS_STEERING_ID:{ //To be tested
-            float angle = frame.data[1]>> 8 | frame.data[0]; // Combine the two bytes to get the angle
+            int16_t raw_angle = (int16_t)((frame.data[1] << 8) | frame.data[0]); // Combine the two bytes to get the signed angle
+            float angle = raw_angle * 0.1f;
+            RCLCPP_WARN(this->get_logger(), "Steering angle: %f", angle);
             this->last_actual_angle = angle; //save the last actual angle
             angle = DEG_TO_RAD(angle); // Convert to radians
+            RCLCPP_WARN(this->get_logger(), "relative zero set: %d", relative_zero_set ? 1 : 0);
+            RCLCPP_WARN(this->get_logger(), "relative maxon zero: %ld", relative_maxon_zero);
+            RCLCPP_WARN(this->get_logger(), "maxon start position: %ld", maxon_start_position);
+            RCLCPP_WARN(this->get_logger(), "maxon activated: %d", maxon_activated);
 
-            if(!relative_zero_set){
-
-                relative_maxon_zero = maxon_start_position + RAD_SW_ANGLE_TO_ACTUATOR_POS(angle); //set the relative zero to the first position of the maxon when the system is turned on
+            if(!relative_zero_set && maxon_activated && maxon_start_position_set){
+                int raw_angle_pos = RAD_SW_ANGLE_TO_ACTUATOR_POS(angle); //calculate the position of the maxon in encoder ticks
+                relative_maxon_zero = maxon_start_position + raw_angle_pos; //set the relative zero to the first position of the maxon when the system is turned on
                 relative_zero_set = true;
-
-                struct can_frame frame;
-                frame.can_id = 0x205;
-                frame.can_dlc = 2;
-                frame.data[0] = 0x0F;
-                frame.data[1] = 0x00;
-                this->send_can_frame(frame);
-
-                frame.can_id = 0x405;//pc to maxon position id
-                frame.can_dlc = 6;
-
-                frame.data[0] = 0x3F; //With 0x3F the maxon starts moving immediately to that position, does not wait to reach the previous position
-                frame.data[1] = 0x00;
-                for (int i = 0; i < 4; ++i) {
-                    frame.data[2 + i] = (relative_maxon_zero >> (8 * i)) & 0xFF; // Extract each byte
+                for (int k = 0; k < 5; k++) {
+                    struct can_frame frame;
+                    frame.can_id = 0x205;
+                    frame.can_dlc = 2;
+                    frame.data[0] = 0x0F;
+                    frame.data[1] = 0x00;
+                    this->send_can_frame(frame);
+                    usleep(1300);
+                    
+                    frame.can_id = 0x405;//pc to maxon position id
+                    frame.can_dlc = 6;
+                    
+                    frame.data[0] = 0x3F; //With 0x3F the maxon starts moving immediately to that position, does not wait to reach the previous position
+                    frame.data[1] = 0x00;
+                    for (int i = 0; i < 4; i++) {
+                        // if (k == 0){
+                            frame.data[2 + i] = ((relative_maxon_zero) >> (8 * i)) & 0xFF; // Extract each byte
+                        // }else{
+                        //     frame.data[2 + i] = (relative_maxon_zero >> (8 * i)) & 0xFF; // Extract each byte
+                        // }
+                    }
+                    this->send_can_frame(frame);
+                    usleep(1300);
                 }
-                this->send_can_frame(frame);
             }
             break;
         }
@@ -664,7 +675,7 @@ void StateController::handle_can_frame(struct can_frame frame){
             break;
         }  
 
-        case 0x512:{
+        case 0x513:{
 
             // Handle ACU state frame
             // uint32_t status = MAP_DECODE_AS_STATE(frame.data);
