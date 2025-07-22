@@ -67,6 +67,8 @@ StateController::StateController() : Node("state_controller"){
     std::thread send_imu_can_messages_thread(&StateController::sendImuCanMessages, this);
     send_imu_can_messages_thread.detach();
 
+    resetMaxon();
+
     maxon_activation();
     
     //initialize CAN open for res and maxon 
@@ -376,7 +378,7 @@ void StateController::sendImuCanMessages(){
         frame.data[3] = (lat_accel >> 8) & 0xFF; // High byte
         frame.data[4] = yaw_angular_velocity & 0xFF;        // Low byte
         frame.data[5] = (yaw_angular_velocity >> 8) & 0xFF; // High byte
-        this->send_can_frame(frame);
+        // this->send_can_frame(frame);
 
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
