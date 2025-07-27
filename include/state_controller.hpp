@@ -54,7 +54,7 @@
 #define RES_CAN_ID 0x191
 
 #define DINAMICS_STEERING_ID 0x446 //id for the steering angle from SPAC
-#define DBC_MESSAGES 0x1234 //temporary
+#define DBC_MESSAGES 0x613 //temporary
 #define DBC_IMU 0x501 //id for the imu data
 #define IMU_GPS_POSE 0x1235 //id for the imu gps pose
 #define IMU_TURN_RATE 0x1236 //id for the imu turn rate
@@ -63,7 +63,7 @@
 
 #define RECORD_BAG "ros2 bag record -s mcap -o "
 #define BAG_DIRECTORY "/home/lart-tasha/Documents/bags/"
-#define BAG_TOPICS "/acu_origin/dynamics /mapping/cones /mapping/cones_markers /pc_origin/dynamics /pc_origin/system_status/critical_as/mission /pc_origin/system_status/critical_as/state /planned_path_topic /rviz_path_topic /target_marker_topic /zed/depth/camera_info /zed/left/camera_info /imu/angular_velocity /zed/left/image_raw/compressed /zed/depth/image_raw /ekf/state /gnss_pose /ekf/stats /ekf/map /ekf/cone_markers /tf /tf_static"
+#define BAG_TOPICS "/acu_origin/dynamics /mapping/cones /mapping/cones_markers /pc_origin/dynamics /pc_origin/system_status/critical_as/mission /pc_origin/system_status/critical_as/state /planned_path_topic /rviz_path_topic /target_marker_topic /zed/depth/camera_info /zed/left/camera_info /imu/angular_velocity /zed/left/image_raw/compressed /zed/depth/image_raw /ekf/state /gnss_pose /ekf/stats /ekf/map /ekf/cone_markers /tf /tf_static /spac/path_marker"
 
 namespace bp = boost::process;
 
@@ -175,6 +175,11 @@ private:
 
   void sendImuCanMessages();
 
+  void angularVelocityCallback(const geometry_msgs::msg::Vector3Stamped::SharedPtr msg);
+
+  void accelerationsCallback(const geometry_msgs::msg::Vector3Stamped::SharedPtr msg);
+
+
   // class variables
   int s=-1;//socket descriptor
 
@@ -194,6 +199,8 @@ private:
   bool bag_recording = false; // flag to check if the bag is being recorded
   int bag_process;
   boost::process::child bag_process_; // Member variable to store the process
+  bool dynamics_available = false; // flag to check if the dynamics message is available
+
 
   //id 0x185
   uint32_t statusword1;
@@ -246,6 +253,10 @@ private:
 
   //inspection steering angle publisher
   rclcpp::Subscription<lart_msgs::msg::DynamicsCMD>::SharedPtr inspection_steering_angle_sub_;
+
+  rclcpp::Subscription<geometry_msgs::msg::Vector3Stamped>::SharedPtr imu_angular_velocity_sub_;
+
+  rclcpp::Subscription<geometry_msgs::msg::Vector3Stamped>::SharedPtr imu_acceleration_sub_;
 
   //spac publisher
   rclcpp::Publisher<lart_msgs::msg::Dynamics>::SharedPtr spac_publisher;

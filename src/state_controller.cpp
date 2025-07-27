@@ -18,12 +18,17 @@ StateController::StateController() : Node("state_controller"){
     inspection_steering_angle_sub_ = this->create_subscription<lart_msgs::msg::DynamicsCMD>("/cmd", 10, std::bind(&StateController::inspectionSteeringAngleCallback, this, _1));
 
     ekf_stats_sub_ = this->create_subscription<lart_msgs::msg::SlamStats>("/ekf/stats", 10, std::bind(&StateController::ekfStatsCallback, this, _1));
-    
-    imu_gps_pose_publisher_ = this->create_publisher<geometry_msgs::msg::PoseStamped>("/gnss_pose", 10);
 
-    imu_turn_rate_publisher_ = this->create_publisher<geometry_msgs::msg::Vector3Stamped>("/imu/angular_velocity", 10);
+    imu_angular_velocity_sub_ = this->create_subscription<geometry_msgs::msg::Vector3Stamped>("/imu/angular_velocity", 10, std::bind(&StateController::angularVelocityCallback, this, _1));
 
+    imu_acceleration_sub_ = this->create_subscription<geometry_msgs::msg::Vector3Stamped>("/imu/acceleration", 10, std::bind(&StateController::accelerationsCallback, this, _1));
 
+    // imu_gps_pose_publisher_ = this->create_publisher<geometry_msgs::msg::PoseStamped>("/gnss_pose", 10);
+
+    // imu_turn_rate_publisher_ = this->create_publisher<geometry_msgs::msg::Vector3Stamped>("/imu/angular_velocity", 10);
+    (void) imu_gps_pose_publisher_ ;
+
+    (void) imu_turn_rate_publisher_;
 
     state_msg.data = lart_msgs::msg::State::OFF; // initialize state as off
 
@@ -66,8 +71,6 @@ StateController::StateController() : Node("state_controller"){
 
     std::thread send_imu_can_messages_thread(&StateController::sendImuCanMessages, this);
     send_imu_can_messages_thread.detach();
-
-    resetMaxon();
 
     maxon_activation();
     
@@ -178,23 +181,40 @@ void StateController::resetMaxon(){
 void StateController::sendPosToMaxon(float angle){
     // std::cout<<"Sending position to maxon: "<<angle<<std::endl;
     //receives the angle and calculates the position with the offset
-    float ratio = STEERING_ANGLE_TO_RATIO(angle);
+    // float ratio = STEERING_ANGLE_TO_RATIO(angle);
+    
+    // int signal;
 
-    // long raw_pos= RAD_ST_ANGLE_TO_ACTUATOR_POS(angle);
+    // if (angle < 0) {
+    //     signal = -1;
+    // } else {
+    //     signal = 1;
+    //     angle = -angle;
+    // }
 
+    
+    // float deg_angle = RAD_TO_DEG(angle);
+    
     long raw_pos;
+    float sw_angle = -61.6073*pow(angle, 4)+449.05708*pow(angle, 3)+16.71117*pow(angle, 2)+156.50789*angle;
+    // float sw_angle = -0.000941426 * pow(deg_angle, 4) - 0.0462859 * pow(deg_angle, 3) - 0.771179 * pow(deg_angle, 2) - 1.0092 * deg_angle - 0.2;
+    // if (signal == 1){
+    //     sw_angle = -sw_angle;
+    // }
 
-    if(this->mission.data == lart_msgs::msg::Mission::INSPECTION){
-        raw_pos= RAD_ST_ANGLE_TO_ACTUATOR_POS(angle);
-        RCLCPP_INFO(this->get_logger(), "Using inspection mission, raw_pos: %ld", raw_pos);
-    }else{
-        raw_pos= RAD_ST_TO_MAXON_POS_WITH_RATIO(angle,ratio);
-    }
+    raw_pos = RAD_SW_ANGLE_TO_ACTUATOR_POS(DEG_TO_RAD(sw_angle));
 
-    if(raw_pos>MAX_ACTUATOR_POS || raw_pos<-MAX_ACTUATOR_POS){
-        RCLCPP_WARN(this->get_logger(), "Position out of range: %ld", raw_pos);
-        raw_pos=MAX_ACTUATOR_POS;
-    }
+    // if(this->mission.data == lart_msgs::msg::Mission::INSPECTION){
+    //     raw_pos= RAD_ST_ANGLE_TO_ACTUATOR_POS(angle);
+    //     RCLCPP_INFO(this->get_logger(), "Using inspection mission, raw_pos: %ld", raw_pos);
+    // }else{
+    //     raw_pos= RAD_ST_TO_MAXON_POS_WITH_RATIO(angle,ratio);
+    // }
+
+    // if(raw_pos>MAX_ACTUATOR_POS || raw_pos<-MAX_ACTUATOR_POS){
+    //     RCLCPP_WARN(this->get_logger(), "Position out of range: %ld", raw_pos);
+    //     raw_pos=MAX_ACTUATOR_POS;
+    // }
     long pos = relative_maxon_zero + raw_pos;
     
     struct can_frame frame;
@@ -250,9 +270,7 @@ void StateController::spacCallback(const lart_msgs::msg::DynamicsCMD::SharedPtr 
         return;
     }
     uint8_t rpm_array[2];
-
-    this->last_target_angle = - RAD_TO_DEG(msg->steering_angle);
-    this->last_target_speed = RPM_TO_MS(msg->rpm) * 3.6;
+ 
     
     //send steering position to maxon
     sendPosToMaxon(msg->steering_angle);
@@ -278,15 +296,20 @@ void StateController::ekfStatsCallback(const lart_msgs::msg::SlamStats::SharedPt
     frame.can_dlc = 8;
     frame.data[0] = this->last_target_angle * 2;
     frame.data[1] = this->last_target_speed;
-    frame.data[2] = this->last_actual_angle * 2;
+    if (this->dynamics_available){
+        frame.data[2] = this->last_actual_angle * 2;
+    }else{
+        int pos_variation = this->actual_position - this->relative_maxon_zero;
+        float angle = ACTUATOR_POS_TO_SW_ANGLE(pos_variation);
+        float rad_whell_angle = 2.50283e-11 * pow(angle, 4) - 1.19784e-7 * pow(angle, 3) - 4.58434e-7 * pow(angle, 2) + 0.00553956 * angle;
+        frame.data[2] = rad_whell_angle * 2; // Convert to radians and multiply by 2
+    }
     frame.data[3] = this->last_actual_speed;
     frame.data[4] = this->last_lap_count;
     frame.data[5] = this->last_current_cone_count;
     frame.data[6] = this->last_total_cone_count;
 
-    (void) frame; // TO REMOVE!!! Just because of the warning
-
-    // this->send_can_frame(frame);
+    this->send_can_frame(frame);
 }
 
 void StateController::missionFinishedCallback(const lart_msgs::msg::State::SharedPtr msg){
@@ -340,17 +363,6 @@ void StateController::setEmergency(){
         std::lock_guard<std::mutex> guard(this->state_mutex);
         this->state_msg.data = lart_msgs::msg::State::EMERGENCY;
     }
-    // state_publisher_->publish(this->state_msg);
-    // struct can_frame frame;
-    // frame.can_id = CAN_AS_STATUS;
-    // frame.can_dlc = 1;
-    // memset(frame.data, 0, frame.can_dlc);
-    // {
-    //     std::lock_guard<std::mutex> guard(this->state_mutex);
-    //     // MAP_ENCODE_AS_STATE(frame.data, this->state_msg.data);
-    //     frame.data[0]=this->state_msg.data;
-    //     this->send_can_frame(frame);
-    // }
 }
 
 // Send frame with state every 200ms
@@ -360,27 +372,6 @@ void StateController::send_can_frames(){
             this->sendState();
         }
         std::this_thread::sleep_for(std::chrono::milliseconds(200));
-    }
-}
-
-void StateController::sendImuCanMessages(){
-    //send imu gps pose
-    while (rclcpp::ok()){
-        int16_t lon_accel = (int16_t) this->last_acceleration_x * 512;
-        int16_t lat_accel = (int16_t) this->last_acceleration_y * 512;
-        int16_t yaw_angular_velocity = (int16_t) this->last_angular_velocity_z * 128;
-        struct can_frame frame;
-        frame.can_id = DBC_IMU;
-        frame.can_dlc = 6;
-        frame.data[0] = lon_accel & 0xFF;        // Low byte
-        frame.data[1] = (lon_accel >> 8) & 0xFF; // High byte
-        frame.data[2] = lat_accel & 0xFF;        // Low byte  
-        frame.data[3] = (lat_accel >> 8) & 0xFF; // High byte
-        frame.data[4] = yaw_angular_velocity & 0xFF;        // Low byte
-        frame.data[5] = (yaw_angular_velocity >> 8) & 0xFF; // High byte
-        // this->send_can_frame(frame);
-
-        std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
 }
 
@@ -414,6 +405,7 @@ void StateController::handle_can_frame(struct can_frame frame){
             frame.can_id = 0x61; //Mission to ACU Id
             send_can_frame(frame);
             this->mission.data =frame.data[0]; //save the mission
+            // this->mission_publisher_->publish(this->mission); //publish the mission
             break;
 
             /*NEW!!*/
@@ -434,7 +426,7 @@ void StateController::handle_can_frame(struct can_frame frame){
             }
             break;
         }
-
+#pragma region IMU_MESSAGES
         // case IMU_TURN_RATE:{
         //     // ----- Decode gyrX -----
         //     int16_t raw_gyrX = (int16_t)((frame.data[0] << 8) | frame.data[1]);
@@ -510,16 +502,16 @@ void StateController::handle_can_frame(struct can_frame frame){
 
         //     break;
         // }
-
+#pragma endregion IMU_MESSAGES
 
         case CAN_TOJAL_SEND_RPM:{ //RPM from VCU to PC
             // Handle ACU RPM frame
             uint16_t rpm = MAP_DECODE_TOJAL_RPM(frame.data);
-            // if (rpm >5000){
-            //     rpm = this->last_valid_rpm;
-            // }else {
-            //     this->last_valid_rpm = rpm;
-            // }
+            if (rpm >5000){
+                rpm = this->last_valid_rpm;
+            }else {
+                this->last_valid_rpm = rpm;
+            }
             this->last_actual_speed = RPM_TO_MS(rpm) * 3.6; //convert to km/h for dbc purposes
             lart_msgs::msg::Dynamics spac_msg;
             spac_msg.rpm = rpm;
@@ -528,15 +520,16 @@ void StateController::handle_can_frame(struct can_frame frame){
             break;
         }
         case DINAMICS_STEERING_ID:{ //To be tested
+            this->dynamics_available = true; //set the dynamics available flag to true
             int16_t raw_angle = (int16_t)((frame.data[1] << 8) | frame.data[0]); // Combine the two bytes to get the signed angle
             float angle = raw_angle * 0.1f;
-            RCLCPP_WARN(this->get_logger(), "Steering angle: %f", angle);
             this->last_actual_angle = angle; //save the last actual angle
             angle = DEG_TO_RAD(angle); // Convert to radians
-            RCLCPP_WARN(this->get_logger(), "relative zero set: %d", relative_zero_set ? 1 : 0);
-            RCLCPP_WARN(this->get_logger(), "relative maxon zero: %ld", relative_maxon_zero);
-            RCLCPP_WARN(this->get_logger(), "maxon start position: %ld", maxon_start_position);
-            RCLCPP_WARN(this->get_logger(), "maxon activated: %d", maxon_activated);
+            // RCLCPP_WARN(this->get_logger(), "Steering angle: %f", angle);
+            // RCLCPP_WARN(this->get_logger(), "relative zero set: %d", relative_zero_set ? 1 : 0);
+            // RCLCPP_WARN(this->get_logger(), "relative maxon zero: %ld", relative_maxon_zero);
+            // RCLCPP_WARN(this->get_logger(), "maxon start position: %ld", maxon_start_position);
+            // RCLCPP_WARN(this->get_logger(), "maxon activated: %d", maxon_activated);
 
             if(!relative_zero_set && maxon_activated && maxon_start_position_set){
                 int raw_angle_pos = RAD_SW_ANGLE_TO_ACTUATOR_POS(angle); //calculate the position of the maxon in encoder ticks
@@ -557,11 +550,7 @@ void StateController::handle_can_frame(struct can_frame frame){
                     frame.data[0] = 0x3F; //With 0x3F the maxon starts moving immediately to that position, does not wait to reach the previous position
                     frame.data[1] = 0x00;
                     for (int i = 0; i < 4; i++) {
-                        // if (k == 0){
-                            frame.data[2 + i] = ((relative_maxon_zero) >> (8 * i)) & 0xFF; // Extract each byte
-                        // }else{
-                        //     frame.data[2 + i] = (relative_maxon_zero >> (8 * i)) & 0xFF; // Extract each byte
-                        // }
+                        frame.data[2 + i] = ((relative_maxon_zero) >> (8 * i)) & 0xFF; // Extract each byte
                     }
                     this->send_can_frame(frame);
                     usleep(1300);
@@ -570,6 +559,7 @@ void StateController::handle_can_frame(struct can_frame frame){
             break;
         }
 
+#pragma region MAXON_MESSAGES
         case PDO_TXONE(NODE_ID_STEERING):
             //maxon feedback
             statusword1 = MAP_DECODE_PDO_TXONE_MAXON_STATUSWORD(frame.data);
@@ -651,6 +641,8 @@ void StateController::handle_can_frame(struct can_frame frame){
             std::cout<<"actual_pwm_duty: "<<actual_pwm_duty<<std::endl;
 
             break;*/
+
+#pragma endregion MAXON_MESSAGES
         
         case RES_CAN_ID:{
             // Receive the go signal
@@ -677,7 +669,7 @@ void StateController::handle_can_frame(struct can_frame frame){
             break;
         }  
 
-        case 0x513:{
+        case 0x513:{ //ACU SHITS AND GIGGLES
 
             // Handle ACU state frame
             // uint32_t status = MAP_DECODE_AS_STATE(frame.data);
@@ -717,7 +709,6 @@ void StateController::handle_can_frame(struct can_frame frame){
                 this->maxon_activated = true;
             }
             break;
-
     }
 }
 
@@ -761,6 +752,41 @@ void StateController::startRecordBagProcess() {
         this->bag_recording = true; // Set the flag to true when the process starts
     } catch (const std::exception &e) {
         std::cerr << "Failed to start process: " << e.what() << std::endl;
+    }
+}
+
+void StateController::angularVelocityCallback(const geometry_msgs::msg::Vector3Stamped::SharedPtr msg){
+    // Handle angular velocity callback
+    this->last_angular_velocity_z = msg->vector.z; // Save the last angular velocity for later use
+
+}
+
+void StateController::accelerationsCallback(const geometry_msgs::msg::Vector3Stamped::SharedPtr msg){
+    // Handle accelerations callback
+    this->last_acceleration_x = msg->vector.x; // Save the last acceleration for later use
+    this->last_acceleration_y = msg->vector.y; // Save the last acceleration for later use
+    // RCLCPP_WARN(this->get_logger(), "Acceleration - X: %f, Y: %f", this->last_acceleration_x, this->last_acceleration_y);
+}
+
+void StateController::sendImuCanMessages(){
+    //send imu gps pose
+    while (rclcpp::ok()){
+        int16_t lon_accel = (int16_t) this->last_acceleration_x * 512;
+        int16_t lat_accel = (int16_t) this->last_acceleration_y * 512;
+        int16_t yaw_angular_velocity = (int16_t) this->last_angular_velocity_z * 128;
+        struct can_frame frame;
+        frame.can_id = DBC_IMU;
+        frame.can_dlc = 6;
+        frame.data[0] = lon_accel & 0xFF;        // Low byte
+        frame.data[1] = (lon_accel >> 8) & 0xFF; // High byte
+        frame.data[2] = lat_accel & 0xFF;        // Low byte  
+        frame.data[3] = (lat_accel >> 8) & 0xFF; // High byte
+        frame.data[4] = yaw_angular_velocity & 0xFF;        // Low byte
+        frame.data[5] = (yaw_angular_velocity >> 8) & 0xFF; // High byte
+        this->send_can_frame(frame);
+        RCLCPP_WARN(this->get_logger(), "Sending IMU data - Lon acc: %d, Lat acc: %d, Yaw: %d", lon_accel, lat_accel, yaw_angular_velocity);
+
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
 }
 
