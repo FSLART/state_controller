@@ -294,15 +294,15 @@ void StateController::ekfStatsCallback(const lart_msgs::msg::SlamStats::SharedPt
     struct can_frame frame;
     frame.can_id = DBC_MESSAGES;
     frame.can_dlc = 8;
-    frame.data[0] = this->last_target_angle * 2;
+    frame.data[0] = RAD_TO_DEG(this->last_target_angle) * 2;
     frame.data[1] = this->last_target_speed;
     if (this->dynamics_available){
-        frame.data[2] = this->last_actual_angle * 2;
+        frame.data[2] = RAD_TO_DEG(this->last_actual_angle) * 2;
     }else{
         int pos_variation = this->actual_position - this->relative_maxon_zero;
         float angle = ACTUATOR_POS_TO_SW_ANGLE(pos_variation);
         float rad_whell_angle = 2.50283e-11 * pow(angle, 4) - 1.19784e-7 * pow(angle, 3) - 4.58434e-7 * pow(angle, 2) + 0.00553956 * angle;
-        frame.data[2] = rad_whell_angle * 2; // Convert to radians and multiply by 2
+        frame.data[2] = RAD_TO_DEG(rad_whell_angle) * 2; // Convert to radians and multiply by 2
     }
     frame.data[3] = this->last_actual_speed;
     frame.data[4] = this->last_lap_count;
@@ -411,6 +411,10 @@ void StateController::handle_can_frame(struct can_frame frame){
             /*NEW!!*/
         case 0x71:{
             uint32_t ignition_status = frame.data[0];
+            uint32_t emergency = frame.data[2];
+
+            if (emergency == 1)
+                this->setEmergency();
             if (ignition_status == 1 && !this->bag_recording){
                 //starting the bag when receiving the ignition
 
@@ -678,6 +682,10 @@ void StateController::handle_can_frame(struct can_frame frame){
             // std::cout << stateToString(this->state_msg.data) << std::endl;
             uint32_t status = frame.data[0];
             // std::cout<<status<<std::endl;
+
+            if( status == lart_msgs::msg::State::EMERGENCY){
+                this->setEmergency();
+            }
             
             if(status == lart_msgs::msg::State::READY && (this->state_msg.data != lart_msgs::msg::State::READY && this->state_msg.data != lart_msgs::msg::State::DRIVING)){
                 RCLCPP_INFO(this->get_logger(), "State changed to READY");
