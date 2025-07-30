@@ -315,32 +315,34 @@ void StateController::ekfStatsCallback(const lart_msgs::msg::SlamStats::SharedPt
 void StateController::missionFinishedCallback(const lart_msgs::msg::State::SharedPtr msg){
     //Handle mission finished callback from mission controller
     //print
-    RCLCPP_INFO(this->get_logger(), "Mission finished callback received with state: %d", msg->data);
-    {
-        std::lock_guard<std::mutex> guard(this->state_mutex);
-        this->state_msg.data = lart_msgs::msg::State::FINISH;
-    
-    }
-    std::thread([this]() {
-        std::this_thread::sleep_for(std::chrono::seconds(5));
-        if (this->bag_recording) {
-            ::kill(this->bag_process_.id(), SIGTERM);
-            this->bag_recording = false;
+    if (this->state_msg.data == lart_msgs::msg::State::DRIVING){
+        
+        RCLCPP_INFO(this->get_logger(), "Mission finished callback received with state: %d", msg->data);
+        {
+            std::lock_guard<std::mutex> guard(this->state_mutex);
+            this->state_msg.data = lart_msgs::msg::State::FINISH;
+            
         }
-    }).detach();
-    // if (msg->data == lart_msgs::msg::State::FINISH){
-        // this->mission_finished = true;
-
-
-        // if(current_rpm == 0){
-        //     {
-        //         std::lock_guard<std::mutex> guard(this->state_mutex);
-        //         this->state_msg.data = lart_msgs::msg::State::FINISH;
-        //     }
-        // }else{
-        //     this->setEmergency();
-        // }
-    // }
+        std::thread([this]() {
+            std::this_thread::sleep_for(std::chrono::seconds(5));
+            if (this->bag_recording) {
+                ::kill(this->bag_process_.id(), SIGTERM);
+                this->bag_recording = false;
+            }
+        }).detach();
+        // if (msg->data == lart_msgs::msg::State::FINISH){
+            // this->mission_finished = true;
+               
+            // if(current_rpm == 0){
+                //     {
+                    //         std::lock_guard<std::mutex> guard(this->state_mutex);
+                    //         this->state_msg.data = lart_msgs::msg::State::FINISH;
+                    //     }
+                    // }else{
+                        //     this->setEmergency();
+                        // }
+                        // }
+    }
 }
 
 void StateController::emergencyCallback(const lart_msgs::msg::State::SharedPtr msg){
@@ -424,7 +426,6 @@ void StateController::handle_can_frame(struct can_frame frame){
                 }
 
                 this->startRecordBagProcess();
-                //this->maxon_activation(); //To be tested
 
                 this->mission_publisher_->publish(this->mission); // send the mission to the mission controller
             }
@@ -702,14 +703,14 @@ void StateController::handle_can_frame(struct can_frame frame){
                  // Start the bag recording process
             }
             /*NEW!!*/
-            if(status == lart_msgs::msg::State::OFF && this->state_msg.data == lart_msgs::msg::State::EMERGENCY){
-                RCLCPP_INFO(this->get_logger(), "State changed to OFF");
-                {
-                    std::lock_guard<std::mutex> guard(this->state_mutex);
-                    this->state_msg.data = lart_msgs::msg::State::OFF;
-                }
-                // this->resetMaxon();
-            }
+            // if(status == lart_msgs::msg::State::OFF && this->state_msg.data == lart_msgs::msg::State::EMERGENCY){
+            //     RCLCPP_INFO(this->get_logger(), "State changed to OFF");
+            //     {
+            //         std::lock_guard<std::mutex> guard(this->state_mutex);
+            //         this->state_msg.data = lart_msgs::msg::State::OFF;
+            //     }
+            //     // this->resetMaxon();
+            // }
             break;
         }
         case 0x708:
@@ -766,6 +767,16 @@ void StateController::startRecordBagProcess() {
 void StateController::angularVelocityCallback(const geometry_msgs::msg::Vector3Stamped::SharedPtr msg){
     // Handle angular velocity callback
     this->last_angular_velocity_z = msg->vector.z; // Save the last angular velocity for later use
+    if (!this->last_imu_msg_set){
+        this->last_imu_msg = std::chrono::steady_clock::now();
+        this->last_imu_msg_set = true; // Set the flag to true after the first message is received
+    }
+
+    if (std::chrono::steady_clock::now() - this->last_imu_msg >= std::chrono::seconds(1)){
+        this->setEmergency();
+    }
+
+    this->last_imu_msg = std::chrono::steady_clock::now();
 
 }
 

@@ -200,6 +200,8 @@ private:
   int bag_process;
   boost::process::child bag_process_; // Member variable to store the process
   bool dynamics_available = false; // flag to check if the dynamics message is available
+  std::chrono::steady_clock::time_point last_imu_msg;
+  bool last_imu_msg_set;
 
 
   //id 0x185
