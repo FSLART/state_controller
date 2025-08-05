@@ -72,6 +72,9 @@ StateController::StateController() : Node("state_controller"){
     std::thread send_imu_can_messages_thread(&StateController::sendImuCanMessages, this);
     send_imu_can_messages_thread.detach();
 
+    std::thread check_maxon_thread(&StateController::check_maxon_timeout, this);
+    check_maxon_thread.detach();
+
     maxon_activation();
     
     //initialize CAN open for res and maxon 
@@ -270,13 +273,13 @@ void StateController::spacCallback(const lart_msgs::msg::DynamicsCMD::SharedPtr 
         return;
     }
     uint8_t rpm_array[2];
- 
-    
+
     //send steering position to maxon
     sendPosToMaxon(msg->steering_angle);
 
     //send RPM to can
     uint16_t rpm= msg->rpm;
+
     struct can_frame frame;
     frame.can_id = CAN_TOJAL_TEST;//to be defined
     frame.can_dlc = 2;
@@ -315,19 +318,21 @@ void StateController::ekfStatsCallback(const lart_msgs::msg::SlamStats::SharedPt
 void StateController::missionFinishedCallback(const lart_msgs::msg::State::SharedPtr msg){
     //Handle mission finished callback from mission controller
     //print
-    RCLCPP_INFO(this->get_logger(), "Mission finished callback received with state: %d", msg->data);
-    {
-        std::lock_guard<std::mutex> guard(this->state_mutex);
-        this->state_msg.data = lart_msgs::msg::State::FINISH;
-    
-    }
-    std::thread([this]() {
-        std::this_thread::sleep_for(std::chrono::seconds(5));
-        if (this->bag_recording) {
-            ::kill(this->bag_process_.id(), SIGTERM);
-            this->bag_recording = false;
+    if (msg->data == lart_msgs::msg::State::FINISH){
+        RCLCPP_INFO(this->get_logger(), "Mission finished callback received with state: %d", msg->data);
+        {
+            std::lock_guard<std::mutex> guard(this->state_mutex);
+            this->state_msg.data = lart_msgs::msg::State::FINISH;
+        
         }
-    }).detach();
+        std::thread([this]() {
+            std::this_thread::sleep_for(std::chrono::seconds(5));
+            if (this->bag_recording) {
+                ::kill(this->bag_process_.id(), SIGTERM);
+                this->bag_recording = false;
+            }
+        }).detach();
+    }
     // if (msg->data == lart_msgs::msg::State::FINISH){
         // this->mission_finished = true;
 
@@ -626,6 +631,12 @@ void StateController::handle_can_frame(struct can_frame frame){
                 maxon_start_position_set = true;
             } //For the steering wheel angle sensor, the maxon start position is the first position of the maxon when the system is turned on
 
+            if(!this->last_maxon_position_set){
+                this->last_maxon_position_set = true;
+                this->maxon_message_time = std::chrono::steady_clock::now(); //save the time the first maxon message was received
+            }
+
+            this->maxon_message_time =std::chrono::steady_clock::now();
 
             // Handle maxon feedback
             //std::cout<<"statusword: "<<statusword2<<std::endl;
@@ -774,6 +785,15 @@ void StateController::accelerationsCallback(const geometry_msgs::msg::Vector3Sta
     this->last_acceleration_x = msg->vector.x; // Save the last acceleration for later use
     this->last_acceleration_y = msg->vector.y; // Save the last acceleration for later use
     // RCLCPP_WARN(this->get_logger(), "Acceleration - X: %f, Y: %f", this->last_acceleration_x, this->last_acceleration_y);
+}
+
+void StateController::check_maxon_timeout(){
+    while(rclcpp::ok()){
+        if((std::chrono::steady_clock::now() - maxon_message_time) >= std::chrono::seconds(1)){
+            this->setEmergency();
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    }
 }
 
 void StateController::sendImuCanMessages(){

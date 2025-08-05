@@ -179,6 +179,9 @@ private:
 
   void accelerationsCallback(const geometry_msgs::msg::Vector3Stamped::SharedPtr msg);
 
+  void check_maxon_timeout();
+
+
 
   // class variables
   int s=-1;//socket descriptor
@@ -200,6 +203,8 @@ private:
   int bag_process;
   boost::process::child bag_process_; // Member variable to store the process
   bool dynamics_available = false; // flag to check if the dynamics message is available
+  bool last_maxon_position_set = false; // flag to check if the last maxon position is set
+  std::chrono::steady_clock::time_point maxon_message_time;//time the state was changed to ready
 
 
   //id 0x185
