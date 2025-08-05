@@ -179,6 +179,9 @@ private:
 
   void accelerationsCallback(const geometry_msgs::msg::Vector3Stamped::SharedPtr msg);
 
+  void check_maxon_timeout();
+
+
 
   // class variables
   int s=-1;//socket descriptor
@@ -202,6 +205,8 @@ private:
   bool dynamics_available = false; // flag to check if the dynamics message is available
   std::chrono::steady_clock::time_point last_imu_msg;
   bool last_imu_msg_set;
+  bool last_maxon_position_set = false; // flag to check if the last maxon position is set
+  std::chrono::steady_clock::time_point maxon_message_time;//time the state was changed to ready
 
 
   //id 0x185
