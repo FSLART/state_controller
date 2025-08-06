@@ -36,6 +36,7 @@
 #include "std_msgs/msg/bool.hpp"
 #include "std_msgs/msg/string.hpp"
 #include "std_msgs/msg/float64.hpp"
+#include "std_msgs/msg/u_int16.hpp"
 #include <geometry_msgs/msg/pose_stamped.hpp>
 #include <geometry_msgs/msg/vector3_stamped.hpp>
 
@@ -209,6 +210,7 @@ private:
   std::chrono::steady_clock::time_point maxon_message_time;//time the state was changed to ready
 
 
+
   //id 0x185
   uint32_t statusword1;
   uint32_t mode;
@@ -273,6 +275,8 @@ private:
 
   //mission_publisher
   rclcpp::Publisher<lart_msgs::msg::Mission>::SharedPtr mission_publisher_;
+
+  rclcpp::Publisher<std_msgs::msg::UInt16>::SharedPtr ignition_status_publisher_;
 
   // imu gps pose publisher
   rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr imu_gps_pose_publisher_;

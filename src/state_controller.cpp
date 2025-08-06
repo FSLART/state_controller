@@ -26,6 +26,9 @@ StateController::StateController() : Node("state_controller"){
     // imu_gps_pose_publisher_ = this->create_publisher<geometry_msgs::msg::PoseStamped>("/gnss_pose", 10);
 
     // imu_turn_rate_publisher_ = this->create_publisher<geometry_msgs::msg::Vector3Stamped>("/imu/angular_velocity", 10);
+
+    ignition_status_publisher_ = this->create_publisher<std_msgs::msg::UInt16>("/system/ignition_status", 10);
+
     (void) imu_gps_pose_publisher_ ;
 
     (void) imu_turn_rate_publisher_;
@@ -100,6 +103,8 @@ StateController::StateController() : Node("state_controller"){
         resetMaxon();
     });
 }
+
+#pragma region MAXON_FUNCTIONS
 
 void StateController::maxon_activation(){
     while(!maxon_activated){
@@ -250,6 +255,8 @@ void StateController::sendPosToMaxon(float angle){
     //std::cout<<std::hex<<pos<<std::endl;//position in hex
     //std::cout<<std::dec<<pos<<std::endl;//position in encoder ticks
 }
+
+#pragma endregion MAXON_FUNCTIONS
 
 void StateController::inspectionSteeringAngleCallback(const lart_msgs::msg::DynamicsCMD::SharedPtr msg){//to test the maxon with the jetson
     float angle = msg->steering_angle;
@@ -410,13 +417,17 @@ void StateController::handle_can_frame(struct can_frame frame){
             frame.can_id = 0x61; //Mission to ACU Id
             send_can_frame(frame);
             this->mission.data =frame.data[0]; //save the mission
-            // this->mission_publisher_->publish(this->mission); //publish the mission
+            this->mission_publisher_->publish(this->mission); //publish the mission
             break;
 
             /*NEW!!*/
         case 0x71:{
             uint32_t ignition_status = frame.data[0];
             uint32_t emergency = frame.data[2];
+            std_msgs::msg::UInt16 ignition_status_msg;
+            ignition_status_msg.data = ignition_status;
+
+            this->ignition_status_publisher_->publish(ignition_status_msg);
 
             if (emergency == 1)
                 this->setEmergency();
@@ -430,7 +441,7 @@ void StateController::handle_can_frame(struct can_frame frame){
 
                 this->startRecordBagProcess();
 
-                this->mission_publisher_->publish(this->mission); // send the mission to the mission controller
+                // this->mission_publisher_->publish(this->mission); // send the mission to the mission controller
             }
             break;
         }
@@ -781,9 +792,9 @@ void StateController::angularVelocityCallback(const geometry_msgs::msg::Vector3S
         this->last_imu_msg_set = true; // Set the flag to true after the first message is received
     }
 
-    if (std::chrono::steady_clock::now() - this->last_imu_msg >= std::chrono::seconds(1)){
-        this->setEmergency();
-    }
+    // if (std::chrono::steady_clock::now() - this->last_imu_msg >= std::chrono::seconds(1)){
+    //     this->setEmergency();
+    // }
 
     this->last_imu_msg = std::chrono::steady_clock::now();
 
