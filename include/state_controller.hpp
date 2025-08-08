@@ -16,6 +16,7 @@
 #include <iomanip>
 #include <iostream>
 #include <sstream>
+#include <fstream>
 #include "linux/can.h"
 #include <sys/types.h>
 #include <sys/socket.h>
@@ -169,6 +170,8 @@ private:
    * 
    */
   void ekfStatsCallback(const lart_msgs::msg::SlamStats::SharedPtr msg);
+
+  void ekfStateCallback(const geometry_msgs::msg::PoseStamped::SharedPtr msg);
   
   std::string stateToString(int state);
 
@@ -266,6 +269,8 @@ private:
   rclcpp::Subscription<geometry_msgs::msg::Vector3Stamped>::SharedPtr imu_angular_velocity_sub_;
 
   rclcpp::Subscription<geometry_msgs::msg::Vector3Stamped>::SharedPtr imu_acceleration_sub_;
+
+  rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr ekf_state_sub_;
 
   //spac publisher
   rclcpp::Publisher<lart_msgs::msg::Dynamics>::SharedPtr spac_publisher;

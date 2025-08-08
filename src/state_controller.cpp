@@ -19,6 +19,8 @@ StateController::StateController() : Node("state_controller"){
 
     ekf_stats_sub_ = this->create_subscription<lart_msgs::msg::SlamStats>("/ekf/stats", 10, std::bind(&StateController::ekfStatsCallback, this, _1));
 
+    ekf_state_sub_ = this->create_subscription<geometry_msgs::msg::PoseStamped>("/ekf/state", 10, std::bind(&StateController::ekfStateCallback, this, _1));
+
     imu_angular_velocity_sub_ = this->create_subscription<geometry_msgs::msg::Vector3Stamped>("/imu/angular_velocity", 10, std::bind(&StateController::angularVelocityCallback, this, _1));
 
     imu_acceleration_sub_ = this->create_subscription<geometry_msgs::msg::Vector3Stamped>("/imu/acceleration", 10, std::bind(&StateController::accelerationsCallback, this, _1));
@@ -80,21 +82,6 @@ StateController::StateController() : Node("state_controller"){
 
     maxon_activation();
     
-    //initialize CAN open for res and maxon 
-    /*NEW!!*/
-    // struct can_frame frame;
-
-    // frame.can_dlc = 2;
-
-    // frame.can_id = 0x00;//id for initialization
-    // frame.data[0] = 0x00; 
-    // frame.data[1] = 0x00; //activate maxon and RES
-    // send_can_frame(frame);
-
-    // frame.data[0]=0x01;//op mode
-    // frame.data[1]=0x00;
-    // send_can_frame(frame);
-
     rclcpp::on_shutdown([this]() {
         if (this->bag_recording){
             ::kill(this->bag_process_.id(), SIGINT); // Terminate the bag recording process
@@ -276,9 +263,9 @@ void StateController::inspectionSteeringAngleCallback(const lart_msgs::msg::Dyna
 
 void StateController::spacCallback(const lart_msgs::msg::DynamicsCMD::SharedPtr msg){
     // Handle spac callback
-    if(this->state_msg.data != lart_msgs::msg::State::DRIVING){
-        return;
-    }
+    // if(this->state_msg.data != lart_msgs::msg::State::DRIVING || this->state_msg.data != lart_msgs::msg::State::FINISH){
+    //     return;
+    // }
     uint8_t rpm_array[2];
 
     //send steering position to maxon
@@ -322,9 +309,33 @@ void StateController::ekfStatsCallback(const lart_msgs::msg::SlamStats::SharedPt
     this->send_can_frame(frame);
 }
 
+void StateController::ekfStateCallback(const geometry_msgs::msg::PoseStamped::SharedPtr msg){
+    struct can_frame frame;
+    frame.can_id = 0x605;
+    frame.can_dlc = 5;
+    float x = msg->pose.position.x * 10;
+    float y = msg->pose.position.y * 10;
+    std::ifstream file("/sys/devices/virtual/thermal/thermal_zone1/temp");
+    int temp;
+    file >> temp;
+    float final_temp = temp / 1000.0 ;
+    int16_t x_int = static_cast<int16_t>(x);
+    int16_t y_int = static_cast<int16_t>(y);
+    frame.data[0] = static_cast<uint8_t>(x_int);
+    frame.data[1] = static_cast<uint8_t>(x_int >> 8);
+    frame.data[2] = static_cast<uint8_t>(y_int);
+    frame.data[3] = static_cast<uint8_t>(y_int >> 8);
+    frame.data[4] = static_cast<uint8_t>(final_temp * 10);
+    this->send_can_frame(frame);
+}
+
 void StateController::missionFinishedCallback(const lart_msgs::msg::State::SharedPtr msg){
     //Handle mission finished callback from mission controller
     //print
+    if (this->state_msg.data == lart_msgs::msg::State::EMERGENCY) {
+        RCLCPP_WARN(this->get_logger(), "Mission finished callback received but state is emergency, ignoring.");
+        return;
+    }
     if (msg->data == lart_msgs::msg::State::FINISH){
         RCLCPP_INFO(this->get_logger(), "Mission finished callback received with state: %d", msg->data);
         {
@@ -340,19 +351,6 @@ void StateController::missionFinishedCallback(const lart_msgs::msg::State::Share
             }
         }).detach();
     }
-    // if (msg->data == lart_msgs::msg::State::FINISH){
-        // this->mission_finished = true;
-
-
-        // if(current_rpm == 0){
-        //     {
-        //         std::lock_guard<std::mutex> guard(this->state_mutex);
-        //         this->state_msg.data = lart_msgs::msg::State::FINISH;
-        //     }
-        // }else{
-        //     this->setEmergency();
-        // }
-    // }
 }
 
 void StateController::emergencyCallback(const lart_msgs::msg::State::SharedPtr msg){
@@ -428,7 +426,7 @@ void StateController::handle_can_frame(struct can_frame frame){
             ignition_status_msg.data = ignition_status;
 
             this->ignition_status_publisher_->publish(ignition_status_msg);
-
+        
             if (emergency == 1)
                 this->setEmergency();
             if (ignition_status == 1 && !this->bag_recording){
@@ -809,8 +807,11 @@ void StateController::accelerationsCallback(const geometry_msgs::msg::Vector3Sta
 
 void StateController::check_maxon_timeout(){
     while(rclcpp::ok()){
-        if((std::chrono::steady_clock::now() - maxon_message_time) >= std::chrono::seconds(1)){
-            this->setEmergency();
+        if(this->last_maxon_position_set){
+            if((std::chrono::steady_clock::now() - maxon_message_time) >= std::chrono::seconds(1)){
+                this->setEmergency();
+                RCLCPP_ERROR(this->get_logger(), "Maxon timeout, emergency state set");
+            }
         }
         std::this_thread::sleep_for(std::chrono::milliseconds(200));
     }
@@ -832,7 +833,7 @@ void StateController::sendImuCanMessages(){
         frame.data[4] = yaw_angular_velocity & 0xFF;        // Low byte
         frame.data[5] = (yaw_angular_velocity >> 8) & 0xFF; // High byte
         this->send_can_frame(frame);
-        RCLCPP_WARN(this->get_logger(), "Sending IMU data - Lon acc: %d, Lat acc: %d, Yaw: %d", lon_accel, lat_accel, yaw_angular_velocity);
+        // RCLCPP_WARN(this->get_logger(), "Sending IMU data - Lon acc: %d, Lat acc: %d, Yaw: %d", lon_accel, lat_accel, yaw_angular_velocity);
 
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
