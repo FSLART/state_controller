@@ -325,7 +325,7 @@ void StateController::ekfStateCallback(const geometry_msgs::msg::PoseStamped::Sh
     frame.data[1] = static_cast<uint8_t>(x_int >> 8);
     frame.data[2] = static_cast<uint8_t>(y_int);
     frame.data[3] = static_cast<uint8_t>(y_int >> 8);
-    frame.data[4] = static_cast<uint8_t>(final_temp * 10);
+    frame.data[4] = static_cast<uint8_t>(final_temp);
     this->send_can_frame(frame);
 }
 
