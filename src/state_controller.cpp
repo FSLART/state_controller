@@ -105,19 +105,19 @@ void StateController::maxon_activation(){
         frame.data[0] = 0x00; 
         frame.data[1] = 0x00; //activate maxon and RES
         send_can_frame(frame);
-        //usleep(5000); //sleep for 200ms for maxon to change modes
+        usleep(5000); //sleep for 200ms for maxon to change modes
         RCLCPP_INFO(this->get_logger(), "maxon initiated");
 
         frame.data[0]=0x80;//pre op mode
         frame.data[1]=NODE_ID_STEERING;
         send_can_frame(frame);
-        //usleep(5000);
+        usleep(5000);
         RCLCPP_INFO(this->get_logger(), "maxon in pre op mode");
 
         frame.data[0]=0x01;//op mode
         frame.data[1]=0x00;
         send_can_frame(frame);
-        //usleep(5000);
+        usleep(5000);
         RCLCPP_INFO(this->get_logger(), "maxon in op mode");
 
         frame.can_id = 0x305;
@@ -171,6 +171,7 @@ void StateController::resetMaxon(){
     frame.data[0] = 0x81; //reset the maxon
     frame.data[1] = NODE_ID_STEERING;
     send_can_frame(frame);
+    this->maxon_activated = false;
 }
 
 void StateController::sendPosToMaxon(float angle){
@@ -313,18 +314,16 @@ void StateController::ekfStateCallback(const geometry_msgs::msg::PoseStamped::Sh
     struct can_frame frame;
     frame.can_id = 0x605;
     frame.can_dlc = 5;
-    float x = msg->pose.position.x * 10;
-    float y = msg->pose.position.y * 10;
     std::ifstream file("/sys/devices/virtual/thermal/thermal_zone1/temp");
     int temp;
     file >> temp;
     float final_temp = temp / 1000.0 ;
-    int16_t x_int = static_cast<int16_t>(x);
-    int16_t y_int = static_cast<int16_t>(y);
-    frame.data[0] = static_cast<uint8_t>(x_int);
-    frame.data[1] = static_cast<uint8_t>(x_int >> 8);
-    frame.data[2] = static_cast<uint8_t>(y_int);
-    frame.data[3] = static_cast<uint8_t>(y_int >> 8);
+    int16_t x_int = static_cast<int16_t>(msg->pose.position.x * 10);
+    int16_t y_int = static_cast<int16_t>(msg->pose.position.y * 10);
+    frame.data[0] = static_cast<uint8_t>(x_int & 0xFF);
+    frame.data[1] = static_cast<uint8_t>((x_int >> 8) & 0xFF);
+    frame.data[2] = static_cast<uint8_t>(y_int & 0xFF);
+    frame.data[3] = static_cast<uint8_t>((y_int >> 8) & 0xFF);
     frame.data[4] = static_cast<uint8_t>(final_temp);
     this->send_can_frame(frame);
 }
@@ -355,8 +354,8 @@ void StateController::missionFinishedCallback(const lart_msgs::msg::State::Share
 
 void StateController::emergencyCallback(const lart_msgs::msg::State::SharedPtr msg){
     //handle emergency from pc pipeline
+    this->setEmergency();
     if (msg->data == lart_msgs::msg::State::EMERGENCY){
-        this->setEmergency();
         std::thread([this]() {
             std::this_thread::sleep_for(std::chrono::seconds(5));
             if (this->bag_recording) {
@@ -609,8 +608,9 @@ void StateController::handle_can_frame(struct can_frame frame){
             uint16_t error_code_maxon= frame.data[1] << 8 | frame.data[0];
             if(error_code_maxon != 0){
                 RCLCPP_ERROR(this->get_logger(), "Maxon error code: %d", error_code_maxon);
-                this->resetMaxon();
-                this->maxon_activation();
+                // this->resetMaxon();
+                // this->maxon_activated = false;
+                // this->maxon_activation();
             }
             break;
         }
@@ -820,9 +820,16 @@ void StateController::check_maxon_timeout(){
 void StateController::sendImuCanMessages(){
     //send imu gps pose
     while (rclcpp::ok()){
-        int16_t lon_accel = (int16_t) this->last_acceleration_x * 512;
-        int16_t lat_accel = (int16_t) this->last_acceleration_y * 512;
-        int16_t yaw_angular_velocity = (int16_t) this->last_angular_velocity_z * 128;
+        auto clamp16 = [](float value, float scale) {
+            float scaled = value * scale;
+            if (scaled > 32767.0f) scaled = 32767.0f;
+            if (scaled < -32768.0f) scaled = -32768.0f;
+            return static_cast<int16_t>(scaled);
+        };
+
+        int16_t lon_accel = clamp16(this->last_acceleration_x, 512.0f);
+        int16_t lat_accel = clamp16(this->last_acceleration_y, 512.0f);
+        int16_t yaw_angular_velocity = clamp16(this->last_angular_velocity_z, 128.0f);
         struct can_frame frame;
         frame.can_id = DBC_IMU;
         frame.can_dlc = 6;
