@@ -74,21 +74,21 @@ StateController::StateController() : Node("state_controller"){
     std::thread send_can_thread(&StateController::send_can_frames, this);
     send_can_thread.detach();
 
-    std::thread send_imu_can_messages_thread(&StateController::sendImuCanMessages, this);
-    send_imu_can_messages_thread.detach();
+    // std::thread send_imu_can_messages_thread(&StateController::sendImuCanMessages, this);
+    // send_imu_can_messages_thread.detach();
 
-    std::thread check_maxon_thread(&StateController::check_maxon_timeout, this);
-    check_maxon_thread.detach();
+    // std::thread check_maxon_thread(&StateController::check_maxon_timeout, this);
+    // check_maxon_thread.detach();
 
-    maxon_activation();
+    // maxon_activation();
     
-    rclcpp::on_shutdown([this]() {
-        if (this->bag_recording){
-            ::kill(this->bag_process_.id(), SIGINT); // Terminate the bag recording process
-            this->bag_recording = false; // Reset the bag recording flag
-        }
-        resetMaxon();
-    });
+    // rclcpp::on_shutdown([this]() {
+    //     if (this->bag_recording){
+    //         ::kill(this->bag_process_.id(), SIGINT); // Terminate the bag recording process
+    //         this->bag_recording = false; // Reset the bag recording flag
+    //     }
+    //     resetMaxon();
+    // });
 }
 
 #pragma region MAXON_FUNCTIONS
@@ -250,14 +250,27 @@ void StateController::inspectionSteeringAngleCallback(const lart_msgs::msg::Dyna
     RCLCPP_INFO(this->get_logger(), "Received steering angle: %f", angle);
     uint16_t rpm = msg->rpm;
 
-    sendPosToMaxon(msg->steering_angle);
-    uint8_t rpm_array[2];
-    struct can_frame frame;
-    frame.can_id = CAN_TOJAL_TEST;//to be defined
-    frame.can_dlc = 2;
-    MAP_ENCODE_TOJAL_RPM(rpm_array, rpm);
-    memcpy(frame.data,rpm_array,2);
-    send_can_frame(frame);
+    // sendPosToMaxon(msg->steering_angle);
+    // uint8_t rpm_array[2];
+    // struct can_frame frame;
+    // frame.can_id = CAN_TOJAL_TEST;//to be defined
+    // frame.can_dlc = 2;
+    // MAP_ENCODE_TOJAL_RPM(rpm_array, rpm);
+    // memcpy(frame.data,rpm_array,2);
+    // send_can_frame(frame);
+
+
+    float sw_angle = -61.6073*pow(angle, 4)+449.05708*pow(angle, 3)+16.71117*pow(angle, 2)+156.50789*angle;
+    struct can_frame cubemars_frame;
+    cubemars_frame.can_id = CAN_EFF_FLAG | 0x00000468;
+    cubemars_frame.can_dlc = 4;
+    int32_t cubemars_position = sw_angle * 10000;
+    //big endian
+    cubemars_frame.data[0] = (cubemars_position >> 24) & 0xFF;
+    cubemars_frame.data[1] = (cubemars_position >> 16) & 0xFF;
+    cubemars_frame.data[2] = (cubemars_position >> 8) & 0xFF;
+    cubemars_frame.data[3] = cubemars_position & 0xFF;
+    send_can_frame(cubemars_frame);
 }
 
 
@@ -269,7 +282,19 @@ void StateController::spacCallback(const lart_msgs::msg::DynamicsCMD::SharedPtr 
     uint8_t rpm_array[2];
 
     //send steering position to maxon
-    sendPosToMaxon(msg->steering_angle);
+    // sendPosToMaxon(msg->steering_angle);
+
+    float sw_angle = -61.6073*pow(msg->steering_angle, 4)+449.05708*pow(msg->steering_angle, 3)+16.71117*pow(msg->steering_angle, 2)+156.50789*msg->steering_angle;
+    struct can_frame cubemars_frame;
+    cubemars_frame.can_id = CAN_EFF_FLAG | 0x00000468;
+    cubemars_frame.can_dlc = 4;
+    int32_t cubemars_position = sw_angle * 10000;
+    //big endian
+    cubemars_frame.data[0] = (cubemars_position >> 24) & 0xFF;
+    cubemars_frame.data[1] = (cubemars_position >> 16) & 0xFF;
+    cubemars_frame.data[2] = (cubemars_position >> 8) & 0xFF;
+    cubemars_frame.data[3] = cubemars_position & 0xFF;
+    send_can_frame(cubemars_frame);
 
     //send RPM to can
     uint16_t rpm= msg->rpm;
